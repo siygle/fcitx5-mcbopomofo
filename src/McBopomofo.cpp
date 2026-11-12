@@ -916,6 +916,14 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
                !englishCandidateMoved_)) {
       int index = list->cursorIndex();
       if (index >= 0 && index < list->size()) list->candidate(index).select(context);
+    } else if (list && tool->kind == InputStates::PlusTool::Kind::English &&
+               (key.states() & fcitx::KeyState::Ctrl) &&
+               !(key.states() & fcitx::KeyState::Alt) && !(key.states() & fcitx::KeyState::Super) &&
+               origKey.code() >= kFcitxRawKeycode_1 && origKey.code() <= kFcitxRawKeycode_9) {
+      // Ctrl+1…9 selects: digits and Shift+digits are text in English mode.
+      // Raw keycodes so it works regardless of keyboard layout.
+      int index = origKey.code() - kFcitxRawKeycode_1;
+      if (index < list->size()) list->candidate(index).select(context);
     } else if (list && tool->kind != InputStates::PlusTool::Kind::English &&
                (origKey.states() & fcitx::KeyState::Shift) &&
                origKey.code() >= kFcitxRawKeycode_1 && origKey.code() <= kFcitxRawKeycode_9) {
@@ -1792,9 +1800,11 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
                      icuTransformInput != nullptr || associatedPhrasesPlain != nullptr;
 
   if (englishTool) {
-    // Every printable key is text here; pick with ↑/↓ + Enter or the mouse.
+    // Digits and Shift+digits are text here, so selection uses Ctrl+1…9
+    // (handled via raw keycodes in keyEvent; labels are for display only).
     selectionKeys_.clear();
-    candidateList->setLabels(std::vector<std::string>(10, ""));
+    candidateList->setLabels({"^1. ", "^2. ", "^3. ", "^4. ", "^5. ", "^6. ",
+                              "^7. ", "^8. ", "^9. "});
     candidateList->setPageSize(9);
   } else if ((associatedPhrases != nullptr && associatedPhrases->autoTriggered)) {
     selectionKeys_ = fcitx::Key::keyListFromString("Shift+Return");

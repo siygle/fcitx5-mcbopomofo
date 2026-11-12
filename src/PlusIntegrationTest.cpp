@@ -187,6 +187,24 @@ int main() {
     ic.type("su3cl3"); ic.key(fcitx::Key(FcitxKey_Left));
     ic.key(toggleEn); ic.type("abc"); ic.key(fcitx::Key(FcitxKey_Return));
     check(ic.committed == "你 abc 好", "English inserted at cursor between 你 and 好");
+    // Ctrl+1…9 selects in English mode, keeping the Chinese around it.
+    // (Raw keycodes 10..18 are the digit row, like a real keyboard.)
+    auto ctrlDigit = [&](int n) {
+      fcitx::Key k(static_cast<fcitx::KeySym>(FcitxKey_0 + n), fcitx::KeyState::Ctrl, 9 + n);
+      ic.key(k);
+    };
+    reset();
+    ic.type("su3cl3"); ic.key(toggleEn); ic.type("github");
+    list = ic.inputPanel().candidateList();
+    check(list && list->size() >= 2 && list->label(0).toString() == "^1. ",
+          "English candidates are labelled ^1. ^2. …");
+    ctrlDigit(2);
+    check(ic.committed == "你好 github", "Ctrl+2 picks the 2nd English candidate, keeps 你好");
+    reset();
+    ic.key(toggleEn); ic.type("k8s");
+    check(ic.inputPanel().preedit().toString() == "[EN] k8s", "plain digits are still typed in English mode");
+    ctrlDigit(1);
+    check(ic.committed == "k8s", "Ctrl+1 picks the 1st candidate");
     reset();
     ic.key(toggleEn); ic.type("me@x.io"); ic.key(fcitx::Key(FcitxKey_Return));
     check(ic.committed == "me@x.io", "symbols like @ are typed, not candidate keys");

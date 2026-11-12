@@ -1,6 +1,6 @@
 # Builds from the local working tree (no network).
 pkgname=fcitx5-mcbopomofo-plus
-pkgver=3.1.1.plus8
+pkgver=3.1.1.plus9
 pkgrel=1
 pkgdesc="McBopomofo for fcitx5 with Plus features (emoji, emoji shortcodes, English mode, calculator, toolbar, auto-spacing)"
 arch=(x86_64)
