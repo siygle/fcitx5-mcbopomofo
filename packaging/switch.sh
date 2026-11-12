@@ -40,14 +40,16 @@ case ${1:-status} in
     [[ -n ${p:-} ]] || { echo "Plus package not built. Run: (cd $here/plus && makepkg -f)"; exit 1; }
     [[ -n $(pkg backup) ]] || { echo "Refusing: original backup package missing in $here/backup"; exit 1; }
     backup_user_config
-    sudo pacman -U --noconfirm "$p"
+    echo "pacman will ask to remove fcitx5-mcbopomofo-git: answer y."
+    sudo pacman -U "$p"
     restart_fcitx
     echo "Now using: McBopomofo Plus. Enable features in fcitx5 settings (options starting with 'Plus:')."
     ;;
   original)
     b=$(pkg backup) || true
     [[ -n ${b:-} ]] || { echo "Original backup package missing in $here/backup"; exit 1; }
-    sudo pacman -U --noconfirm "$b"
+    echo "pacman will ask to remove fcitx5-mcbopomofo-plus: answer y."
+    sudo pacman -U "$b"
     # Plus options are unknown to the original addon and are simply ignored,
     # but strip them so the original config file is exactly as before.
     if [[ -f $conf_dir/mcbopomofo.conf ]]; then
