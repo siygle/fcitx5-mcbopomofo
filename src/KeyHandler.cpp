@@ -2047,7 +2047,7 @@ std::unique_ptr<InputStates::PlusTool> KeyHandler::buildPlusTool(
     std::vector<std::string> labels;
     if (!input.empty()) {
       for (const auto& w : englishLexicon_.candidates(input)) {
-        values.push_back(w);
+        values.push_back(composed.head + w + composed.tail);
         labels.push_back(w);
       }
     }

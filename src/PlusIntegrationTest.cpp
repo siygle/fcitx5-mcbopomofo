@@ -159,6 +159,27 @@ int main() {
     ic.type("vu0");
     check(ic.inputPanel().auxDown().toString().empty(), "no hint for real Zhuyin ㄒㄧㄢ");
     ic.key(fcitx::Key(FcitxKey_Escape));
+    // Only the English part is replaced; Chinese around it survives every
+    // commit path (regression: Enter/selection used to drop 你好).
+    reset();
+    ic.type("su3cl3github"); ic.key(toggleEn); ic.key(fcitx::Key(FcitxKey_Return));
+    check(ic.committed == "你好 github", "hint + Enter keeps 你好, commits as typed");
+    reset();
+    ic.type("su3cl3github"); ic.key(toggleEn);
+    list = ic.inputPanel().candidateList();
+    if (list && list->size() > 1) list->candidate(0).select(&ic);
+    check(ic.committed == "你好 GitHub", "mouse select keeps 你好");
+    reset();
+    ic.type("su3cl3github"); ic.key(toggleEn);
+    ic.key(fcitx::Key(FcitxKey_Down)); ic.key(fcitx::Key(FcitxKey_Return));
+    check(ic.committed == "你好 github", "Down + Enter picks 2nd, keeps 你好");
+    reset();
+    ic.type("su3cl3"); ic.key(fcitx::Key(FcitxKey_Left));
+    ic.key(toggleEn); ic.type("abc"); ic.key(fcitx::Key(FcitxKey_Return));
+    check(ic.committed == "你 abc 好", "English inserted at cursor between 你 and 好");
+    reset();
+    ic.key(toggleEn); ic.type("me@x.io"); ic.key(fcitx::Key(FcitxKey_Return));
+    check(ic.committed == "me@x.io", "symbols like @ are typed, not candidate keys");
     reset();
     ic.setCapabilityFlags(fcitx::CapabilityFlag::Password);
     ic.key(toggleEn);

@@ -334,6 +334,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;
   bool sensitiveContext_ = false;
+  // In English mode, Enter commits what was typed unless ↑/↓ picked another.
+  bool englishCandidateMoved_ = false;
   KeyHandler::PlusOptions plusOptionsFromConfig() const;
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;

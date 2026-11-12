@@ -858,12 +858,20 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
     };
     keyEvent.filterAndAccept();
     auto* list = dynamic_cast<fcitx::CommonCandidateList*>(context->inputPanel().candidateList().get());
-    if (list && key.check(FcitxKey_Down)) list->nextCandidate();
-    else if (list && key.check(FcitxKey_Up)) list->prevCandidate();
-    else if (list && key.check(FcitxKey_Return) && !tool->values.empty()) {
+    if (list && key.check(FcitxKey_Down)) {
+      list->nextCandidate();
+      englishCandidateMoved_ = true;
+    } else if (list && key.check(FcitxKey_Up)) {
+      list->prevCandidate();
+      englishCandidateMoved_ = true;
+    }
+    else if (list && key.check(FcitxKey_Return) && !tool->values.empty() &&
+             !(tool->kind == InputStates::PlusTool::Kind::English &&
+               !englishCandidateMoved_)) {
       int index = list->cursorIndex();
       if (index >= 0 && index < list->size()) list->candidate(index).select(context);
-    } else if (list && (origKey.states() & fcitx::KeyState::Shift) &&
+    } else if (list && tool->kind != InputStates::PlusTool::Kind::English &&
+               (origKey.states() & fcitx::KeyState::Shift) &&
                origKey.code() >= kFcitxRawKeycode_1 && origKey.code() <= kFcitxRawKeycode_9) {
       int index = origKey.code() - kFcitxRawKeycode_1;
       if (index < list->size()) list->candidate(index).select(context);
@@ -1615,6 +1623,7 @@ void McBopomofoEngine::enterNewState(fcitx::InputContext* context,
     // EmptyIgnoringPrevious's own definition for why.
     state_ = std::make_unique<InputStates::Empty>();
   } else if (auto* tool = dynamic_cast<InputStates::PlusTool*>(currentPtr)) {
+    englishCandidateMoved_ = false;
     handleCandidatesState(context, prevPtr, tool);
     updatePreedit(context, tool);
   } else if (auto* committing =
@@ -1731,10 +1740,17 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
       dynamic_cast<InputStates::IcuTransformInput*>(state_.get());
 
   auto* plusTool = dynamic_cast<InputStates::PlusTool*>(current);
-  bool useShiftKey = plusTool != nullptr || numberInput != nullptr || icuTransformInput != nullptr ||
-                     associatedPhrasesPlain != nullptr;
+  const bool englishTool =
+      plusTool != nullptr && plusTool->kind == InputStates::PlusTool::Kind::English;
+  bool useShiftKey = (plusTool != nullptr && !englishTool) || numberInput != nullptr ||
+                     icuTransformInput != nullptr || associatedPhrasesPlain != nullptr;
 
-  if ((associatedPhrases != nullptr && associatedPhrases->autoTriggered)) {
+  if (englishTool) {
+    // Every printable key is text here; pick with ↑/↓ + Enter or the mouse.
+    selectionKeys_.clear();
+    candidateList->setLabels(std::vector<std::string>(10, ""));
+    candidateList->setPageSize(9);
+  } else if ((associatedPhrases != nullptr && associatedPhrases->autoTriggered)) {
     selectionKeys_ = fcitx::Key::keyListFromString("Shift+Return");
     std::vector<std::string> labels = {"⇧⏎ "};
     candidateList->setLabels(labels);
