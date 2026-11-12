@@ -1,8 +1,8 @@
 # Builds from the local working tree (no network).
 pkgname=fcitx5-mcbopomofo-plus
-pkgver=3.1.1.plus1
+pkgver=3.1.1.plus2
 pkgrel=1
-pkgdesc="McBopomofo for fcitx5 with Plus features (emoji, calculator, initials, typo correction)"
+pkgdesc="McBopomofo for fcitx5 with Plus features (emoji, calculator, toolbar, auto-spacing)"
 arch=(x86_64)
 url="https://github.com/openvanilla/fcitx5-mcbopomofo"
 license=(MIT)

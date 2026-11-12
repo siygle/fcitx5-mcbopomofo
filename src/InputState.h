@@ -305,7 +305,7 @@ struct Big5 : InputState {
 
 // Editable Plus tools. Selection is handled separately from normal composition.
 struct PlusTool : NotEmpty {
-  enum class Kind { Calculator, Initials, Partial, Toolbar };
+  enum class Kind { Calculator, Toolbar };
   PlusTool(Kind kind, std::string input, std::string display,
            std::vector<std::string> values)
       : NotEmpty(display, display.size()), kind(kind), input(std::move(input)),

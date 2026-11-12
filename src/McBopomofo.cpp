@@ -658,11 +658,7 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
 
   keyHandler_->setInputMode(mode);
   keyHandler_->setPlusOptions({config_.plusEmoji.value(), config_.plusCalculator.value(),
-      config_.plusToolbar.value(), config_.plusCompletion.value(), config_.plusTypo.value()});
-  if (config_.plusCompletion.value() && !completionIndexLoaded_) {
-    completionIndexLoaded_ = keyHandler_->loadCompletionIndex(
-        fcitx5_compat::locate("data/mcbopomofo-data.txt"));
-  }
+      config_.plusToolbar.value()});
   std::vector<std::string> quickPhrases;
   std::ifstream quickFile(languageModelLoader_->userDataPath() + "/plus-quick-phrases.txt");
   std::string line;
@@ -794,7 +790,7 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
   // Never read clipboard or offer Plus tools in password/sensitive contexts.
   keyHandler_->setPlusOptions(sensitiveContext_ ? KeyHandler::PlusOptions{} :
       KeyHandler::PlusOptions{config_.plusEmoji.value(), config_.plusCalculator.value(),
-      config_.plusToolbar.value(), config_.plusCompletion.value(), config_.plusTypo.value()});
+      config_.plusToolbar.value()});
   keyHandler_->clipboardProvider = {};
   if (!sensitiveContext_ && config_.plusToolbar.value()) {
     keyHandler_->clipboardProvider = [this, ref = context->watch()]() -> std::string {

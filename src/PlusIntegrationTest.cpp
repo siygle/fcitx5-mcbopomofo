@@ -64,45 +64,21 @@ int main() {
     ic.type("=1+2*3"); ic.key(fcitx::Key(FcitxKey_Return));
     check(ic.committed == "7", "calculator through real fcitx key path");
     reset();
-    check(menuSelect("首注音"), "initials feature menu");
-    ic.type("w1");
-    auto list = ic.inputPanel().candidateList();
-    bool found = false;
-    if (list) for (int i = 0; i < list->size(); ++i) {
-      if (list->candidate(i).text().toString() == "台北") {
-        list->candidate(i).select(&ic); found = true; break;
-      }
-    }
-    check(found && ic.committed == "台北", "initials candidate click commits 台北");
-    reset();
-    ic.type("w961"); ic.key(fcitx::Key(FcitxKey_Down));
-    list = ic.inputPanel().candidateList();
-    found = false;
-    if (list) for (int i = 0; i < list->size(); ++i) {
-      if (list->candidate(i).text().toString() == "台北") found = true;
-    }
-    check(found, "unfinished reading completion candidates");
-    ic.key(fcitx::Key(FcitxKey_Escape));
-    ic.type("o3"); ic.key(fcitx::Key(FcitxKey_Return));
-    check(ic.committed == "台北", "Escape preserves original composition");
-    reset();
-    ic.type("ri3");
-    list = ic.inputPanel().candidateList();
-    check(list && list->size() > 0, "invalid reading offers correction panel");
-    ic.key(fcitx::Key(FcitxKey_Down)); ic.key(fcitx::Key(FcitxKey_Return));
-    check(!ic.committed.empty(), "correction selection commits");
-    reset();
     check(menuSelect("常用語"), "toolbar feature menu");
-    list = ic.inputPanel().candidateList();
+    auto list = ic.inputPanel().candidateList();
     check(list && list->size() > 0, "toolbar candidates render without clipboard addon");
     ic.key(fcitx::Key(FcitxKey_Escape));
     reset();
     ic.type("su3cl3"); ic.key(fcitx::Key(FcitxKey_Return));
     check(ic.committed == "你好", "normal Bopomofo composition unchanged");
     reset();
+    ic.type("ri3");
+    list = ic.inputPanel().candidateList();
+    check(!list || list->size() == 0, "invalid reading keeps original behavior (no correction panel)");
+    reset();
     ic.type("d9 vup "); ic.key(fcitx::Key(FcitxKey_Down));  // 開心
     list = ic.inputPanel().candidateList();
-    found = false;
+    bool found = false;
     if (list) for (int i = 0; i < list->size(); ++i) {
       if (list->candidate(i).text().toString() == "開心😊") {
         check(i == 2, "emoji is third candidate");

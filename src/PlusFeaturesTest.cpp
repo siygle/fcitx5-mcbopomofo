@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "PlusFeatures.h"
 #include "gtest/gtest.h"
-#include <algorithm>
 
 namespace McBopomofo::Plus {
 TEST(PlusCalculator, PrecedenceAndDecimals) {
@@ -26,27 +25,5 @@ TEST(PlusSpacing, ChineseBoundariesOnly) {
 TEST(PlusEmoji, TraditionalChineseSuffix) {
   EXPECT_EQ(EmojiForText("今天很開心"), std::vector<std::string>{"今天很開心😊"});
   EXPECT_TRUE(EmojiForText("一般文字").empty());
-}
-TEST(PlusCompletion, FullAndInitialPrefixes) {
-  CompletionIndex index;
-  ASSERT_TRUE(index.load("mcbopomofo-test-data.txt"));
-  auto initial = index.query("ㄊ-ㄅ");
-  EXPECT_TRUE(std::any_of(initial.begin(), initial.end(), [](const auto& p) { return p.value == "台北"; }));
-  auto partial = index.query("ㄊㄞˊ-ㄅ");
-  EXPECT_TRUE(std::any_of(partial.begin(), partial.end(), [](const auto& p) { return p.value == "台北"; }));
-  EXPECT_TRUE(index.query("").empty());
-  EXPECT_TRUE(index.query("ㄊ-ㄅ", 0).empty());
-  EXPECT_LE(index.query("ㄊ-ㄅ", 2).size(), 2u);
-  ASSERT_FALSE(index.load("/nonexistent/data.txt"));
-  EXPECT_TRUE(index.query("ㄊ-ㄅ").empty());
-}
-TEST(PlusTypo, SingleEditsBoundedAndDeterministic) {
-  auto keys = TypoKeys("su3");
-  for (auto expected : {"us3", "s3", "su", "sju3", "su4"}) {
-    EXPECT_NE(std::find(keys.begin(), keys.end(), expected), keys.end()) << expected;
-  }
-  EXPECT_EQ(keys, TypoKeys("su3"));
-  EXPECT_TRUE(TypoKeys("").empty());
-  EXPECT_TRUE(TypoKeys("123456789").empty());
 }
 }  // namespace McBopomofo::Plus

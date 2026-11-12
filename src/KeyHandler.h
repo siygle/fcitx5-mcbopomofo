@@ -131,11 +131,8 @@ class KeyHandler {
     bool emoji = false;
     bool calculator = false;
     bool toolbar = false;
-    bool completion = false;
-    bool typo = false;
   };
   void setPlusOptions(PlusOptions options) { plusOptions_ = options; }
-  bool loadCompletionIndex(const std::string& path) { return completionIndex_.load(path); }
   void setQuickPhrases(std::vector<std::string> phrases) { quickPhrases_ = std::move(phrases); }
   std::function<std::string()> clipboardProvider;
   std::unique_ptr<InputStates::PlusTool> buildPlusTool(
@@ -262,10 +259,7 @@ class KeyHandler {
  private:
   void clearReading();
   PlusOptions plusOptions_;
-  Plus::CompletionIndex completionIndex_;
-  std::string rawReadingKeys_;
   std::vector<std::string> quickPhrases_;
-  std::unique_ptr<InputStates::PlusTool> typoSuggestions();
 
   bool handleBig5(Key key, McBopomofo::InputStates::Big5* state,
                   StateCallback stateCallback,

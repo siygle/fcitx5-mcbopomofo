@@ -87,17 +87,6 @@ class Calculator {
   const std::string& input_;
   size_t pos_ = 0;
 };
-std::vector<std::string> Syllables(const std::string& reading) {
-  std::vector<std::string> result;
-  size_t start = 0;
-  while (start < reading.size()) {
-    size_t end = reading.find('-', start);
-    result.push_back(reading.substr(start, end - start));
-    if (end == std::string::npos) break;
-    start = end + 1;
-  }
-  return result;
-}
 // Decode a single, already split UTF-8 scalar. Input is engine-generated UTF-8.
 uint32_t Scalar(const std::string& c) {
   if (c.empty()) return 0;
@@ -151,82 +140,6 @@ std::vector<std::string> EmojiForText(const std::string& text) {
   std::vector<std::string> result;
   for (const auto& [word, emoji] : entries) {
     if (text.ends_with(word)) result.push_back(text + emoji);
-  }
-  return result;
-}
-bool CompletionIndex::load(const std::string& path) {
-  buckets_.clear();
-  std::ifstream input(path);
-  if (!input) return false;
-  std::string line;
-  while (std::getline(input, line)) {
-    if (line.empty() || line[0] == '#' || line[0] == '_') continue;
-    std::istringstream stream(line);
-    stream.imbue(std::locale::classic());
-    Phrase p;
-    if (!(stream >> p.reading >> p.value >> p.score) || !std::isfinite(p.score)) continue;
-    if (p.value.starts_with("MACRO@")) continue;
-    p.syllables = Syllables(p.reading);
-    if (p.syllables.empty() || p.syllables.size() > 8) continue;
-    const auto chars = Split(p.syllables[0]);
-    if (chars.empty() || Scalar(chars[0]) < 0x3105 || Scalar(chars[0]) > 0x3129) continue;
-    buckets_[chars[0]].push_back(std::move(p));
-  }
-  return true;
-}
-std::vector<Phrase> CompletionIndex::query(const std::string& reading, size_t limit) const {
-  auto prefixes = Syllables(reading);
-  if (prefixes.empty() || prefixes.size() > 8 || !limit) return {};
-  auto chars = Split(prefixes[0]);
-  if (chars.empty()) return {};
-  auto it = buckets_.find(chars[0]);
-  if (it == buckets_.end()) return {};
-  std::vector<Phrase> matches;
-  for (const auto& phrase : it->second) {
-    if (phrase.syllables.size() != prefixes.size()) continue;
-    bool match = true;
-    for (size_t i = 0; i < prefixes.size(); ++i) {
-      if (prefixes[i].empty() || !phrase.syllables[i].starts_with(prefixes[i])) { match = false; break; }
-    }
-    if (match) matches.push_back(phrase);
-  }
-  std::stable_sort(matches.begin(), matches.end(), [](const auto& a, const auto& b) { return a.score > b.score; });
-  std::unordered_set<std::string> seen;
-  std::vector<Phrase> result;
-  for (const auto& p : matches) {
-    if (seen.insert(p.value).second) result.push_back(p);
-    if (result.size() == limit) break;
-  }
-  return result;
-}
-std::vector<std::string> TypoKeys(const std::string& keys) {
-  if (keys.empty() || keys.size() > 8) return {};
-  const std::vector<std::string> rows = {"1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./"};
-  const std::vector<double> offsets = {0, 0.25, 0.5, 0.75};
-  std::unordered_set<std::string> seen;
-  std::vector<std::string> result;
-  auto add = [&](std::string value) {
-    if (!value.empty() && value != keys && seen.insert(value).second) result.push_back(std::move(value));
-  };
-  for (size_t i = 0; i < keys.size(); ++i) {
-    auto v = keys; v.erase(i, 1); add(v);
-    if (i + 1 < keys.size()) { v = keys; std::swap(v[i], v[i + 1]); add(v); }
-    for (size_t r = 0; r < rows.size(); ++r) {
-      auto c = rows[r].find(keys[i]);
-      if (c == std::string::npos) continue;
-      for (size_t s = 0; s < rows.size(); ++s) {
-        if (std::abs(static_cast<int>(s) - static_cast<int>(r)) > 1) continue;
-        for (size_t j = 0; j < rows[s].size(); ++j) {
-          if (std::abs((j + offsets[s]) - (c + offsets[r])) > 1.05) continue;
-          v = keys; v[i] = rows[s][j]; add(v);
-        }
-      }
-    }
-  }
-  for (size_t i = 0; i <= keys.size(); ++i) {
-    for (const auto& row : rows) for (char c : row) {
-      auto v = keys; v.insert(i, 1, c); add(v);
-    }
   }
   return result;
 }

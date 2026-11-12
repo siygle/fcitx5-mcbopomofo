@@ -17,8 +17,6 @@ cat > "$root/config/fcitx5/conf/mcbopomofo.conf" <<'INI'
 PlusEmoji=True
 PlusCalculator=True
 PlusToolbar=True
-PlusCompletion=True
-PlusTypo=True
 PlusSpaceLetters=True
 PlusSpaceDigits=True
 INI

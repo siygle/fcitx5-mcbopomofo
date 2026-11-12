@@ -102,8 +102,6 @@ FCITX_CONFIGURATION(
     fcitx::Option<bool> plusEmoji{this, "PlusEmoji", _("Plus: Emoji suggestions"), false};
     fcitx::Option<bool> plusCalculator{this, "PlusCalculator", _("Plus: Calculator (=)"), false};
     fcitx::Option<bool> plusToolbar{this, "PlusToolbar", _("Plus: Quick phrases and current clipboard"), false};
-    fcitx::Option<bool> plusCompletion{this, "PlusCompletion", _("Plus: Initials and partial readings"), false};
-    fcitx::Option<bool> plusTypo{this, "PlusTypo", _("Plus: Invalid-reading correction"), false};
     fcitx::Option<bool> plusSpaceLetters{this, "PlusSpaceLetters", _("Plus: Space between Chinese and ASCII letters"), false};
     fcitx::Option<bool> plusSpaceDigits{this, "PlusSpaceDigits", _("Plus: Space between Chinese and digits"), false};
 
@@ -327,7 +325,6 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::shared_ptr<KeyHandler> keyHandler_;
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;
-  bool completionIndexLoaded_ = false;
   bool sensitiveContext_ = false;
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;
