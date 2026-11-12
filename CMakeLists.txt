@@ -21,6 +21,9 @@ include(ECMSetupVersion)
 include(ECMUninstallTarget)
 
 option(ENABLE_TEST "Build Test" On)
+# Local voice input. Off by default so a normal build does not change behavior
+# and does not need the Rust daemon. See voice/README.md.
+option(ENABLE_VOICE_POC "Build the local voice-input proof of concept (default OFF)" OFF)
 
 # clang-tidy
 option(ENABLE_CLANG_TIDY "Enable clang-tidy" Off)

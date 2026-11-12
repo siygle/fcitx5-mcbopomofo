@@ -63,6 +63,9 @@ set(MCBOPOMOFO_LIB_SOURCES
 
 # Setup some compiler option that is generally useful and compatible with Fcitx 5 (C++17)
 include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cmake")
+# That module forces CMAKE_CXX_STANDARD 17. Plus sources use C++20
+# (std::string::starts_with). Put the project standard back.
+set(CMAKE_CXX_STANDARD 20)
 
 add_library(McBopomofoLib ${MCBOPOMOFO_LIB_SOURCES})
 target_compile_options(McBopomofoLib PRIVATE -Wno-unknown-pragmas)
@@ -87,6 +90,12 @@ target_link_libraries(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notificati
 target_include_directories(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notifications fmt::fmt)
 set_target_properties(mcbopomofo PROPERTIES PREFIX "")
 target_compile_definitions(mcbopomofo PRIVATE FCITX_GETTEXT_DOMAIN=\"fcitx5-mcbopomofo\")
+
+if (ENABLE_VOICE_POC)
+    target_sources(mcbopomofo PRIVATE VoiceClient.cpp VoiceClient.h)
+    target_compile_definitions(mcbopomofo PRIVATE ENABLE_VOICE_POC=1)
+    message(STATUS "Voice PoC client enabled; the daemon is the separate voice/ Cargo workspace")
+endif()
 install(TARGETS mcbopomofo DESTINATION "${FCITX_INSTALL_LIBDIR}/fcitx5")
 
 if (ENABLE_CLANG_TIDY)
