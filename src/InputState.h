@@ -305,14 +305,20 @@ struct Big5 : InputState {
 
 // Editable Plus tools. Selection is handled separately from normal composition.
 struct PlusTool : NotEmpty {
-  enum class Kind { Calculator, Toolbar };
+  enum class Kind { Calculator, Toolbar, EmojiShortcode };
   PlusTool(Kind kind, std::string input, std::string display,
-           std::vector<std::string> values)
-      : NotEmpty(display, display.size()), kind(kind), input(std::move(input)),
-        values(std::move(values)) {}
+           std::vector<std::string> values,
+           std::vector<std::string> labels = {},
+           size_t cursor = std::string::npos)
+      : NotEmpty(display, cursor == std::string::npos ? display.size() : cursor),
+        kind(kind), input(std::move(input)), values(std::move(values)),
+        labels(std::move(labels)) {}
   Kind kind;
   std::string input;
+  // Text committed when a candidate is chosen.
   std::vector<std::string> values;
+  // Optional display text per candidate (same size as values when set).
+  std::vector<std::string> labels;
 };
 
 struct SelectingDateMacro : InputState {

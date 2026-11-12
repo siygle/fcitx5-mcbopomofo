@@ -145,6 +145,9 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
   if (auto* tool = dynamic_cast<InputStates::PlusTool*>(state)) {
     return handlePlusTool(key, tool, stateCallback, errorCallback);
   }
+  if (maybeHandleEmojiPrefix(key, state, stateCallback)) {
+    return true;
+  }
   if (plusOptions_.calculator && key.ascii == '=' && !key.ctrlPressed &&
       !key.shiftPressed && grid_.length() == 0 && reading_.isEmpty()) {
     stateCallback(buildPlusTool(InputStates::PlusTool::Kind::Calculator));
@@ -1990,6 +1993,21 @@ std::unique_ptr<InputStates::PlusTool> KeyHandler::buildPlusTool(
   if (kind == Kind::Calculator) {
     display = "[計算器] =" + input;
     if (auto result = Plus::Calculate(input)) values.push_back(*result);
+  } else if (kind == Kind::EmojiShortcode) {
+    // Keep whatever is already being composed; the emoji goes at the cursor.
+    auto composed = getComposedString(grid_.cursor());
+    std::string marker = std::string(1, emojiPrefix_.key ? emojiPrefix_.key : ':');
+    if (emojiPrefix_.doubleTap) marker += marker;
+    display = composed.head + marker + input;
+    size_t cursor = display.size();
+    display += composed.tail;
+    std::vector<std::string> labels;
+    for (const auto& m : emojiShortcodes_.search(input)) {
+      values.push_back(composed.head + m.emoji + composed.tail);
+      labels.push_back(m.emoji + " :" + m.code);
+    }
+    return std::make_unique<InputStates::PlusTool>(kind, input, display,
+        std::move(values), std::move(labels), cursor);
   } else if (kind == Kind::Toolbar) {
     display = "[工具列] 常用語／目前剪貼簿／符號";
     values = quickPhrases_;
@@ -2017,6 +2035,29 @@ bool KeyHandler::handlePlusTool(Key key, InputStates::PlusTool* state,
   }
   if (key.ctrlPressed || key.shiftPressed) return false;
   if (state->kind == Kind::Toolbar) return false;
+  if (state->kind == Kind::EmojiShortcode) {
+    auto query = state->input;
+    if (key.ascii == Key::BACKSPACE) {
+      if (query.empty()) {  // Backspace past the prefix cancels.
+        if (grid_.length()) callback(buildInputtingState());
+        else callback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+        return true;
+      }
+      query.pop_back();
+    } else if (key.ascii == Key::SPACE) {
+      if (!state->values.empty()) commitPlusTool(state->values.front(), callback);
+      else error();
+      return true;
+    } else {
+      char c = static_cast<char>(std::tolower(static_cast<unsigned char>(key.ascii)));
+      bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' ||
+                c == '+' || c == '-';
+      if (!ok || query.size() >= 40) { error(); return true; }
+      query += c;
+    }
+    callback(buildPlusTool(state->kind, query));
+    return true;
+  }
   auto input = state->input;
   if (key.ascii == Key::BACKSPACE) {
     if (!input.empty()) input.pop_back();
@@ -2026,6 +2067,73 @@ bool KeyHandler::handlePlusTool(Key key, InputStates::PlusTool* state,
   } else return false;
   callback(buildPlusTool(state->kind, input));
   return true;
+}
+
+bool KeyHandler::maybeHandleEmojiPrefix(Key key, InputState* state,
+                                        const StateCallback& callback) {
+  // Bare modifier events (Shift for ':') must not cancel a pending tap.
+  if (key.ascii == 0 && key.name == Key::KeyName::UNKNOWN) return false;
+  const bool isPrefixKey = plusOptions_.emojiShortcode && emojiPrefix_.valid() &&
+                           key.ascii == emojiPrefix_.key && !key.ctrlPressed &&
+                           !key.isFromNumberPad;
+  const int64_t pending = emojiPrefixPendingMs_;
+  emojiPrefixPendingMs_ = -1;  // Any other key cancels a pending first tap.
+  if (!isPrefixKey || inputMode_ != InputMode::McBopomofo) return false;
+
+  // Is the prefix key a Bopomofo component on the active layout? (';' is ㄤ
+  // on Standard/ETen/IBM, but plain punctuation on Hsu/ETen26.)
+  const bool isBopomofoKey =
+      Formosa::Mandarin::BopomofoReadingBuffer(reading_.keyboardLayout())
+          .isValidKey(key.ascii);
+  auto open = [&]() {
+    callback(buildPlusTool(InputStates::PlusTool::Kind::EmojiShortcode));
+  };
+
+  if (!emojiPrefix_.doubleTap) {
+    // A single-key prefix must never be a Bopomofo key, and only triggers on
+    // an empty buffer so mid-sentence it keeps working as punctuation.
+    if (isBopomofoKey || !reading_.isEmpty() ||
+        dynamic_cast<InputStates::NotEmpty*>(state) != nullptr) {
+      return false;
+    }
+    open();
+    return true;
+  }
+
+  // Double-tap. The first tap is always handled normally and only
+  // remembered, so a single tap keeps its original meaning. The second tap
+  // undoes exactly what the first produced, then opens the panel.
+  if (pending >= 0 && keyTimeMs_ - pending <= emojiDoubleTapMs_) {
+    if (emojiPrefixPendingWasReading_) {
+      // First tap started a reading made of only this key (e.g. ㄤ). Typing
+      // the same component twice is never a meaningful Zhuyin sequence.
+      if (grid_.length() == emojiPrefixPendingLength_ && !reading_.isEmpty() &&
+          reading_.keyboardLayout()->keySequenceFromSyllable(reading_.syllable()) ==
+              std::string(1, key.ascii)) {
+        clearReading();
+        open();
+        return true;
+      }
+    } else if (reading_.isEmpty() &&
+               grid_.length() == emojiPrefixPendingLength_ + 1 &&
+               grid_.cursor() > 0) {
+      // First tap became punctuation in the composing buffer.
+      const auto& last = grid_.readings()[grid_.cursor() - 1];
+      if (last.starts_with("_") && last.ends_with(std::string(1, key.ascii))) {
+        grid_.deleteReadingBeforeCursor();
+        walk();
+        open();
+        return true;
+      }
+    }
+  }
+  // Only a tap that starts fresh (no syllable in progress) can be a first tap.
+  if (reading_.isEmpty()) {
+    emojiPrefixPendingMs_ = keyTimeMs_;
+    emojiPrefixPendingLength_ = grid_.length();
+    emojiPrefixPendingWasReading_ = isBopomofoKey;
+  }
+  return false;
 }
 
 void KeyHandler::commitPlusTool(const std::string& value, StateCallback callback) {

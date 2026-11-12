@@ -104,6 +104,10 @@ FCITX_CONFIGURATION(
     fcitx::Option<bool> plusToolbar{this, "PlusToolbar", _("Plus: Quick phrases and current clipboard"), false};
     fcitx::Option<bool> plusSpaceLetters{this, "PlusSpaceLetters", _("Plus: Space between Chinese and ASCII letters"), false};
     fcitx::Option<bool> plusSpaceDigits{this, "PlusSpaceDigits", _("Plus: Space between Chinese and digits"), false};
+    fcitx::Option<bool> plusEmojiShortcode{this, "PlusEmojiShortcode", _("Plus: Emoji shortcodes (prefix + name, e.g. ;;smile)"), false};
+    // One punctuation key (";") or the same key twice (";;" = double-tap).
+    fcitx::Option<std::string> plusEmojiShortcodePrefix{this, "PlusEmojiShortcodePrefix", _("Plus: Emoji shortcode prefix (one key, or the key twice for double-tap)"), ";;"};
+    fcitx::Option<int, fcitx::IntConstrain> plusEmojiDoubleTapMs{this, "PlusEmojiDoubleTapMs", _("Plus: Double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};
 
     // Keyboard layout: standard, eten, etc.
     fcitx::OptionWithAnnotation<BopomofoKeyboardLayout,
@@ -326,6 +330,7 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;
   bool sensitiveContext_ = false;
+  KeyHandler::PlusOptions plusOptionsFromConfig() const;
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;
 

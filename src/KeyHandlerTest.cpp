@@ -108,6 +108,18 @@ class MockLocalizedString : public KeyHandler::LocalizedStrings {
   }
 };
 
+static KeyHandler::PlusOptions PlusCalc() {
+  KeyHandler::PlusOptions o;
+  o.calculator = true;
+  return o;
+}
+
+static KeyHandler::PlusOptions PlusShortcode() {
+  KeyHandler::PlusOptions o;
+  o.emojiShortcode = true;
+  return o;
+}
+
 class KeyHandlerTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -524,7 +536,7 @@ TEST_F(KeyHandlerTest, BopomofoAnnotation) {
 }
 
 TEST_F(KeyHandlerTest, PlusCalculatorCommitAndCancel) {
-  keyHandler_->setPlusOptions({false, true, false});
+  keyHandler_->setPlusOptions(PlusCalc());
   auto state = handleKeySequence(asciiKeys("=1+2*3\r"));
   auto* committed = dynamic_cast<InputStates::Committing*>(state.get());
   ASSERT_NE(committed, nullptr);
@@ -535,7 +547,7 @@ TEST_F(KeyHandlerTest, PlusCalculatorCommitAndCancel) {
 }
 
 TEST_F(KeyHandlerTest, PlusCalculatorRejectsZeroDivision) {
-  keyHandler_->setPlusOptions({false, true, false});
+  keyHandler_->setPlusOptions(PlusCalc());
   auto state = handleKeySequence(asciiKeys("=1/0\r"), true, true);
   ASSERT_NE(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
 }
@@ -555,6 +567,146 @@ TEST_F(KeyHandlerTest, PlusToolbarReadsClipboardOnlyOnRequest) {
 
 TEST_F(KeyHandlerTest, PlusDisabledDoesNotInterceptEquals) {
   auto state = handleKeySequence(asciiKeys("="));
+  EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeSinglePrefix) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("`"));
+  ASSERT_GT(keyHandler_->emojiShortcodes().load("mcbopomofo-plus-emoji-shortcodes.txt"), 0u);
+  auto state = handleKeySequence(asciiKeys("`thumbsup"));
+  auto* tool = dynamic_cast<InputStates::PlusTool*>(state.get());
+  ASSERT_NE(tool, nullptr);
+  ASSERT_FALSE(tool->values.empty());
+  EXPECT_EQ(tool->values[0], "👍");
+  EXPECT_EQ(tool->labels[0], "👍 :thumbsup");
+  state = handleKeySequence(asciiKeys("`thumbsup "));
+  auto* committed = dynamic_cast<InputStates::Committing*>(state.get());
+  ASSERT_NE(committed, nullptr);
+  EXPECT_EQ(committed->text, "👍");
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeSinglePrefixOnlyOnEmptyBuffer) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("`"));
+  keyHandler_->emojiShortcodes().load("mcbopomofo-plus-emoji-shortcodes.txt");
+  // Mid-sentence, the key keeps its normal meaning (punctuation list here).
+  auto state = handleKeySequence(asciiKeys("su3`"));
+  EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeDoubleTapKeepsCompositionAndPunctuation) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("=="), 300);
+  keyHandler_->emojiShortcodes().load("mcbopomofo-plus-emoji-shortcodes.txt");
+  std::unique_ptr<InputState> state = std::make_unique<InputStates::Empty>();
+  auto feed = [&](const std::string& keys, int64_t t) {
+    for (char c : keys) {
+      keyHandler_->setKeyTimeMs(t);
+      keyHandler_->handle(Key::asciiKey(c), state.get(),
+          [&state](auto next) {
+            if (auto* seq = dynamic_cast<InputStates::StateSequence*>(next.get())) {
+              for (auto& s : seq->states) state = std::move(s);
+            } else state = std::move(next);
+          }, []() {});
+    }
+  };
+  feed("su3", 0);          // 你
+  feed("=", 1000);         // first tap: normal punctuation ＝
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->composingBuffer, "你＝");
+  feed("=", 1200);         // second tap within 300 ms
+  auto* tool = dynamic_cast<InputStates::PlusTool*>(state.get());
+  ASSERT_NE(tool, nullptr);
+  EXPECT_EQ(tool->composingBuffer, "你==");  // ＝ removed, prefix shown
+  feed("fire", 1300);
+  tool = dynamic_cast<InputStates::PlusTool*>(state.get());
+  ASSERT_NE(tool, nullptr);
+  ASSERT_FALSE(tool->values.empty());
+  EXPECT_EQ(tool->values[0], "你🔥");  // Composition kept around the emoji.
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeSlowDoubleTapIsTwoPunctuations) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("=="), 300);
+  std::unique_ptr<InputState> state = std::make_unique<InputStates::Empty>();
+  auto feed = [&](char c, int64_t t) {
+    keyHandler_->setKeyTimeMs(t);
+    keyHandler_->handle(Key::asciiKey(c), state.get(),
+        [&state](auto next) { state = std::move(next); }, []() {});
+  };
+  feed('=', 0);
+  feed('=', 900);  // Too slow.
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->composingBuffer, "＝＝");
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeDoubleTapOnBopomofoKey) {
+  // ';' is ㄤ on the Standard layout: first tap starts ㄤ, second opens panel.
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse(";;"), 300);
+  keyHandler_->emojiShortcodes().load("mcbopomofo-plus-emoji-shortcodes.txt");
+  std::unique_ptr<InputState> state = std::make_unique<InputStates::Empty>();
+  auto feed = [&](const std::string& keys, int64_t t) {
+    for (char c : keys) {
+      keyHandler_->setKeyTimeMs(t);
+      keyHandler_->handle(Key::asciiKey(c), state.get(),
+          [&state](auto next) { state = std::move(next); }, []() {});
+    }
+  };
+  feed(";", 0);
+  ASSERT_NE(dynamic_cast<InputStates::Inputting*>(state.get()), nullptr);
+  feed(";", 100);
+  auto* tool = dynamic_cast<InputStates::PlusTool*>(state.get());
+  ASSERT_NE(tool, nullptr);
+  EXPECT_EQ(tool->composingBuffer, ";;");
+  // Slow double tap stays Bopomofo.
+  keyHandler_->reset();
+  state = std::make_unique<InputStates::Empty>();
+  feed(";", 1000);
+  feed(";", 2000);
+  EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+  // ㄊㄤ then ; is not a fresh first tap.
+  keyHandler_->reset();
+  state = std::make_unique<InputStates::Empty>();
+  feed("w;;", 3000);
+  EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeSinglePrefixRejectsBopomofoKey) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse(";"));
+  auto state = handleKeySequence(asciiKeys(";"));  // ㄤ, not the panel.
+  EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeNeverStealsBopomofoKey) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  // ';' is ㄤ on the Standard layout.
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse(";"));
+  auto state = handleKeySequence(asciiKeys("w;"));  // ㄊ + ㄤ
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->composingBuffer, "ㄊㄤ");
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeEscapeAndBackspaceCancel) {
+  keyHandler_->setPlusOptions(PlusShortcode());
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("`"));
+  auto keys = asciiKeys("`x");
+  keys.push_back(Key::asciiKey(Key::BACKSPACE));
+  keys.push_back(Key::asciiKey(Key::BACKSPACE));
+  auto state = handleKeySequence(keys);
+  EXPECT_NE(dynamic_cast<InputStates::Empty*>(state.get()), nullptr);
+  state = handleKeySequence(asciiKeys("`smile\x1b"));
+  EXPECT_NE(dynamic_cast<InputStates::Empty*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusEmojiShortcodeDisabledByDefault) {
+  keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("`"));
+  auto state = handleKeySequence(asciiKeys("`"));
   EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
 }
 

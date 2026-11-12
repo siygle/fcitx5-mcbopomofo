@@ -37,6 +37,7 @@
 #include "InputState.h"
 #include "Key.h"
 #include "LanguageModelLoader.h"
+#include "PlusEmoji.h"
 #include "PlusFeatures.h"
 
 namespace McBopomofo {
@@ -131,8 +132,19 @@ class KeyHandler {
     bool emoji = false;
     bool calculator = false;
     bool toolbar = false;
+    bool emojiShortcode = false;
   };
   void setPlusOptions(PlusOptions options) { plusOptions_ = options; }
+  // Emoji shortcode input. An invalid prefix disables the feature.
+  void setEmojiShortcodePrefix(Plus::EmojiPrefix prefix, int doubleTapMs = 300) {
+    emojiPrefix_ = prefix;
+    emojiDoubleTapMs_ = doubleTapMs;
+    emojiPrefixPendingMs_ = -1;
+  }
+  Plus::EmojiShortcodes& emojiShortcodes() { return emojiShortcodes_; }
+  // Monotonic key time in ms; set by the frontend before each handle() call.
+  // Tests drive it directly. Only used for prefix double-tap detection.
+  void setKeyTimeMs(int64_t ms) { keyTimeMs_ = ms; }
   void setQuickPhrases(std::vector<std::string> phrases) { quickPhrases_ = std::move(phrases); }
   std::function<std::string()> clipboardProvider;
   std::unique_ptr<InputStates::PlusTool> buildPlusTool(
@@ -259,6 +271,16 @@ class KeyHandler {
  private:
   void clearReading();
   PlusOptions plusOptions_;
+  Plus::EmojiPrefix emojiPrefix_;
+  Plus::EmojiShortcodes emojiShortcodes_;
+  int emojiDoubleTapMs_ = 300;
+  int64_t keyTimeMs_ = 0;
+  // Time of a first prefix tap awaiting its second tap; -1 when none.
+  int64_t emojiPrefixPendingMs_ = -1;
+  size_t emojiPrefixPendingLength_ = 0;
+  bool emojiPrefixPendingWasReading_ = false;
+  bool maybeHandleEmojiPrefix(Key key, InputState* state,
+                              const StateCallback& callback);
   std::vector<std::string> quickPhrases_;
 
   bool handleBig5(Key key, McBopomofo::InputStates::Big5* state,

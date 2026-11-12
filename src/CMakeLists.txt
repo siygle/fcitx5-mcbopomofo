@@ -40,6 +40,8 @@ set(MCBOPOMOFO_LIB_SOURCES
     InputMacro.h
     InputState.cpp
     InputState.h
+    PlusEmoji.cpp
+    PlusEmoji.h
     PlusFeatures.cpp
     PlusFeatures.h
     KeyHandler.cpp
@@ -126,12 +128,13 @@ if (ENABLE_TEST)
         endif()
 
         # Test target declarations.
-        add_executable(McBopomofoTest KeyHandlerTest.cpp TimestampedPathTest.cpp PlusFeaturesTest.cpp)
+        add_executable(McBopomofoTest KeyHandlerTest.cpp TimestampedPathTest.cpp PlusFeaturesTest.cpp PlusEmojiTest.cpp)
         target_compile_options(McBopomofoTest PRIVATE -Wno-unknown-pragmas)
         target_link_libraries(McBopomofoTest PRIVATE Fcitx5::Core GTest::gtest_main GTest::gmock_main McBopomofoLib fmt::fmt ${JSONC_LIBRARIES})
         target_include_directories(McBopomofoTest PRIVATE Fcitx5::Core fmt::fmt)
 
         configure_file(../data/data.txt mcbopomofo-test-data.txt)
+        configure_file(../data/plus-emoji-shortcodes.txt mcbopomofo-plus-emoji-shortcodes.txt COPYONLY)
 
         include(GoogleTest)
         gtest_discover_tests(McBopomofoTest)

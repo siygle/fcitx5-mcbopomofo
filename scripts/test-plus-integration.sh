@@ -13,10 +13,15 @@ cp "$source_dir/data/data-plain-bpmf.txt" "$root/data/fcitx5/data/mcbopomofo-dat
 cp "$source_dir/data/associated-phrases-v2.txt" "$root/data/fcitx5/data/mcbopomofo-associated-phrases-v2.txt"
 cp "$source_dir/data/bpmfvs-pua.txt" "$root/data/fcitx5/data/mcbopomofo-bpmfvs-pua.txt"
 cp "$source_dir/data/bpmfvs-variants.txt" "$root/data/fcitx5/data/mcbopomofo-bpmfvs-variants.txt"
+cp "$source_dir/data/plus-emoji-shortcodes.txt" "$root/data/fcitx5/data/mcbopomofo-plus-emoji-shortcodes.txt"
+mkdir -p "$root/data/fcitx5/mcbopomofo"
+printf 'tw 🇹🇼 taiwan\nsmile 🙂\n' > "$root/data/fcitx5/mcbopomofo/plus-emoji-shortcodes.txt"
 cat > "$root/config/fcitx5/conf/mcbopomofo.conf" <<'INI'
 PlusEmoji=True
 PlusCalculator=True
 PlusToolbar=True
+PlusEmojiShortcode=True
+PlusEmojiShortcodePrefix=;;
 PlusSpaceLetters=True
 PlusSpaceDigits=True
 INI

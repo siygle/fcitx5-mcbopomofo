@@ -94,6 +94,29 @@ int main() {
     ic.type("=");
     check(ic.inputPanel().preedit().toString().find("計算器") == std::string::npos,
           "Plus disabled in password context");
+    // Emoji shortcodes, real key path with the default ";;" double-tap.
+    ic.setCapabilityFlags(fcitx::CapabilityFlags{});
+    reset();
+    ic.type(";;tw");
+    list = ic.inputPanel().candidateList();
+    check(list && list->size() > 0 &&
+              list->candidate(0).text().toString() == "🇹🇼 :tw",
+          "double-tap ;; + user shortcode 'tw' -> 🇹🇼 first");
+    ic.key(fcitx::Key(FcitxKey_space));
+    check(ic.committed == "🇹🇼", "space commits the shortcode emoji");
+    reset();
+    ic.type("su3cl3;;smile");
+    list = ic.inputPanel().candidateList();
+    check(list && list->size() > 0 && list->candidate(0).text().toString() == "🙂 :smile",
+          "user override 🙂 for :smile ranks first");
+    ic.key(fcitx::Key(FcitxKey_space));
+    check(ic.committed == "你好🙂", "emoji inserted at cursor, whole composition commits once");
+    reset();
+    ic.type("w;");  // ';' is ㄤ inside a syllable
+    check(ic.inputPanel().preedit().toString() == "ㄊㄤ",
+          "prefix key inside a syllable stays Bopomofo");
+    ic.key(fcitx::Key(FcitxKey_Escape));
+    reset();
     ic.focusOut();
     instance.exit();
   });

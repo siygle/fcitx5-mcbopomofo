@@ -32,6 +32,7 @@
 #include <clipboard_public.h>
 #include <notifications_public.h>  // from fcitx-module/notifications
 
+#include <chrono>
 #include <memory>
 #include <fstream>
 #include <sstream>
@@ -585,6 +586,15 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   reloadConfig();
 }
 
+KeyHandler::PlusOptions McBopomofoEngine::plusOptionsFromConfig() const {
+  KeyHandler::PlusOptions o;
+  o.emoji = config_.plusEmoji.value();
+  o.calculator = config_.plusCalculator.value();
+  o.toolbar = config_.plusToolbar.value();
+  o.emojiShortcode = config_.plusEmojiShortcode.value();
+  return o;
+}
+
 const fcitx::Configuration* McBopomofoEngine::getConfig() const {
   return &config_;
 }
@@ -657,8 +667,19 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   }
 
   keyHandler_->setInputMode(mode);
-  keyHandler_->setPlusOptions({config_.plusEmoji.value(), config_.plusCalculator.value(),
-      config_.plusToolbar.value()});
+  keyHandler_->setPlusOptions(plusOptionsFromConfig());
+  keyHandler_->setEmojiShortcodePrefix(
+      Plus::EmojiPrefix::Parse(config_.plusEmojiShortcodePrefix.value()),
+      config_.plusEmojiDoubleTapMs.value());
+  // Reloaded on every activation so edits to the user file take effect after
+  // switching input methods, like the other user files.
+  keyHandler_->emojiShortcodes().clear();
+  if (config_.plusEmojiShortcode.value()) {
+    keyHandler_->emojiShortcodes().load(
+        fcitx5_compat::locate("data/mcbopomofo-plus-emoji-shortcodes.txt"));
+    keyHandler_->emojiShortcodes().load(
+        languageModelLoader_->userDataPath() + "/plus-emoji-shortcodes.txt", true);
+  }
   std::vector<std::string> quickPhrases;
   std::ifstream quickFile(languageModelLoader_->userDataPath() + "/plus-quick-phrases.txt");
   std::string line;
@@ -788,9 +809,11 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
   fcitx::Key origKey = keyEvent.rawKey();
   sensitiveContext_ = context->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive);
   // Never read clipboard or offer Plus tools in password/sensitive contexts.
-  keyHandler_->setPlusOptions(sensitiveContext_ ? KeyHandler::PlusOptions{} :
-      KeyHandler::PlusOptions{config_.plusEmoji.value(), config_.plusCalculator.value(),
-      config_.plusToolbar.value()});
+  keyHandler_->setPlusOptions(sensitiveContext_ ? KeyHandler::PlusOptions{}
+                                                : plusOptionsFromConfig());
+  // Key event timestamps are 0 on some frontends; use a monotonic clock.
+  keyHandler_->setKeyTimeMs(std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count());
   keyHandler_->clipboardProvider = {};
   if (!sensitiveContext_ && config_.plusToolbar.value()) {
     keyHandler_->clipboardProvider = [this, ref = context->watch()]() -> std::string {
@@ -1747,9 +1770,11 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
   auto* customMenu = dynamic_cast<InputStates::CustomMenu*>(current);
 
   if (plusTool != nullptr) {
-    for (const auto& value : plusTool->values) {
+    for (size_t i = 0; i < plusTool->values.size(); ++i) {
+      const auto& value = plusTool->values[i];
+      const auto& label = i < plusTool->labels.size() ? plusTool->labels[i] : value;
       candidateList->append(std::make_unique<McBopomofoDirectInsertWord>(
-          fcitx::Text(value), value, [this, callback](std::unique_ptr<InputState> next) {
+          fcitx::Text(label), value, [this, callback](std::unique_ptr<InputState> next) {
             keyHandler_->reset();
             callback(std::move(next));
           }));
