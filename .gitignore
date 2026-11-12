@@ -16,3 +16,4 @@ packaging/*/build/
 packaging/*/*.pkg.tar.zst
 packaging/backup/original-files.tar*
 packaging/backup/user-config/
+packaging/backup/plus-settings.conf
