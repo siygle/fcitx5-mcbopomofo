@@ -44,6 +44,7 @@
 #include "KeyHandler.h"
 #include "LanguageModelLoader.h"
 #include "PathCompat.h"
+#include "PlusDoubleTap.h"
 
 namespace McBopomofo {
 
@@ -111,6 +112,13 @@ FCITX_CONFIGURATION(
     fcitx::Option<bool> plusEnglishHint{this, "PlusEnglishHint", _("Plus: Hint when typed keys look like an English word"), false};
     fcitx::KeyListOption plusEnglishToggleKeys{this, "PlusEnglishToggleKeys", _("Plus: English mode shortcut"),
         {fcitx::Key("Control+Shift+space")}, fcitx::KeyListConstrain()};
+    // Modifier keys tapped twice (e.g. Shift_R). Empty = off.
+    fcitx::KeyListOption plusEnglishDoubleTapKeys{this, "PlusEnglishDoubleTapKeys",
+        _("Plus: English mode double-tap key (modifier, e.g. Right Shift)"), {},
+        fcitx::KeyListConstrain({fcitx::KeyConstrainFlag::AllowModifierOnly,
+                                 fcitx::KeyConstrainFlag::AllowModifierLess})};
+    fcitx::Option<int, fcitx::IntConstrain> plusEnglishDoubleTapMs{this, "PlusEnglishDoubleTapMs",
+        _("Plus: English mode double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};
     fcitx::Option<int, fcitx::IntConstrain> plusEmojiDoubleTapMs{this, "PlusEmojiDoubleTapMs", _("Plus: Double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};
 
     // Keyboard layout: standard, eten, etc.
@@ -337,6 +345,10 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // In English mode, Enter commits what was typed unless ↑/↓ picked another.
   bool englishCandidateMoved_ = false;
   fcitx::KeyList englishToggleKeys_;
+  // Modifier keysyms watched for the English double tap.
+  std::vector<fcitx::KeySym> englishDoubleTapSyms_;
+  Plus::DoubleTap englishDoubleTap_;
+  bool toggleEnglish(fcitx::InputContext* context);
   KeyHandler::PlusOptions plusOptionsFromConfig() const;
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;

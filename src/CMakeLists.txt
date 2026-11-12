@@ -44,6 +44,7 @@ set(MCBOPOMOFO_LIB_SOURCES
     PlusEmoji.h
     PlusEnglish.cpp
     PlusEnglish.h
+    PlusDoubleTap.h
     PlusFeatures.cpp
     PlusFeatures.h
     KeyHandler.cpp
@@ -130,7 +131,7 @@ if (ENABLE_TEST)
         endif()
 
         # Test target declarations.
-        add_executable(McBopomofoTest KeyHandlerTest.cpp TimestampedPathTest.cpp PlusFeaturesTest.cpp PlusEmojiTest.cpp PlusEnglishTest.cpp)
+        add_executable(McBopomofoTest KeyHandlerTest.cpp TimestampedPathTest.cpp PlusFeaturesTest.cpp PlusEmojiTest.cpp PlusEnglishTest.cpp PlusDoubleTapTest.cpp)
         target_compile_options(McBopomofoTest PRIVATE -Wno-unknown-pragmas)
         target_link_libraries(McBopomofoTest PRIVATE Fcitx5::Core GTest::gtest_main GTest::gmock_main McBopomofoLib fmt::fmt ${JSONC_LIBRARIES})
         target_include_directories(McBopomofoTest PRIVATE Fcitx5::Core fmt::fmt)

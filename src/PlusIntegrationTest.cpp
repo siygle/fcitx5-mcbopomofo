@@ -22,6 +22,8 @@ class TestContext final : public fcitx::InputContext {
   void deleteSurroundingTextImpl(int, unsigned int) override {}
   void forwardKeyImpl(const fcitx::ForwardKeyEvent&) override {}
   void updatePreeditImpl() override {}
+  void press(fcitx::Key k) { fcitx::KeyEvent e(this, k, false); keyEvent(e); }
+  void release(fcitx::Key k) { fcitx::KeyEvent e(this, k, true); keyEvent(e); }
   void key(fcitx::Key k) {
     fcitx::KeyEvent press(this, k, false); keyEvent(press);
     fcitx::KeyEvent release(this, k, true); keyEvent(release);
@@ -155,8 +157,9 @@ int main() {
     // B: hint while typing English letters as Bopomofo, shortcut converts.
     reset();
     ic.type("su3github");
-    check(ic.inputPanel().auxDown().toString() == toggleLabel + " → GitHub",
-          "hint shows configured shortcut → GitHub without changing input");
+    // The test config also sets a Right Shift double tap, so both are listed.
+    check(ic.inputPanel().auxDown().toString() == toggleLabel + " / Right Shift ×2 → GitHub",
+          "hint shows configured shortcuts → GitHub without changing input");
     check(ic.inputPanel().preedit().toString().find("GitHub") == std::string::npos,
           "preedit still Bopomofo before shortcut");
     ic.key(toggleEn);
@@ -187,6 +190,40 @@ int main() {
     reset();
     ic.key(toggleEn); ic.type("me@x.io"); ic.key(fcitx::Key(FcitxKey_Return));
     check(ic.committed == "me@x.io", "symbols like @ are typed, not candidate keys");
+    // Double tap Right Shift (configured in the test script).
+    const fcitx::Key shiftR(FcitxKey_Shift_R);
+    // While Shift is down, fcitx reports the Shift state on its release.
+    const fcitx::Key shiftRUp(FcitxKey_Shift_R, fcitx::KeyState::Shift);
+    auto tapShiftR = [&]() { ic.press(shiftR); ic.release(shiftRUp); };
+    reset();
+    ic.type("su3cl3");
+    tapShiftR(); tapShiftR();
+    check(ic.inputPanel().preedit().toString() == "你好[EN] ", "Right Shift ×2 enters [EN] keeping 你好");
+    ic.type("linux");
+    tapShiftR(); tapShiftR();  // Double tap again leaves, committing.
+    check(ic.committed == "你好 Linux", "Right Shift ×2 again commits corrected word");
+    reset();
+    tapShiftR();
+    check(ic.inputPanel().preedit().toString().find("[EN]") == std::string::npos,
+          "single Right Shift tap does nothing");
+    reset();
+    // Shift used as a modifier (Shift_R + a -> "A") must not count as taps.
+    ic.press(shiftR); ic.key(fcitx::Key(FcitxKey_A, fcitx::KeyState::Shift)); ic.release(shiftRUp);
+    ic.press(shiftR); ic.key(fcitx::Key(FcitxKey_B, fcitx::KeyState::Shift)); ic.release(shiftRUp);
+    check(ic.inputPanel().preedit().toString().find("[EN]") == std::string::npos,
+          "Right Shift used as modifier is not a double tap");
+    reset();
+    ic.type("su3github");
+    check(ic.inputPanel().auxDown().toString().find("Right Shift ×2") != std::string::npos,
+          "hint lists the double-tap key too");
+    tapShiftR(); tapShiftR();
+    ic.key(fcitx::Key(FcitxKey_space));
+    check(ic.committed == "你 GitHub ", "double tap converts the hinted keys");
+    reset();
+    ic.setCapabilityFlags(fcitx::CapabilityFlag::Password);
+    tapShiftR(); tapShiftR();
+    check(ic.inputPanel().preedit().toString().find("[EN]") == std::string::npos,
+          "double tap disabled in password context");
     reset();
     ic.setCapabilityFlags(fcitx::CapabilityFlag::Password);
     ic.key(toggleEn);

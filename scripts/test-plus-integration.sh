@@ -29,6 +29,7 @@ PlusEnglishHint=True
 PlusSpaceLetters=True
 PlusSpaceDigits=True
 INI
+printf '\n[PlusEnglishDoubleTapKeys]\n0=Shift_R\n' >> "$root/config/fcitx5/conf/mcbopomofo.conf"
 # Optional: override the English toggle shortcut (a list section must come
 # after all top-level keys in fcitx ini files).
 if [[ -n ${MCB_TEST_TOGGLE_KEY:-} ]]; then

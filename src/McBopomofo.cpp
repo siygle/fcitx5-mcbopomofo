@@ -32,6 +32,7 @@
 #include <clipboard_public.h>
 #include <notifications_public.h>  // from fcitx-module/notifications
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <fstream>
@@ -586,6 +587,20 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   reloadConfig();
 }
 
+bool McBopomofoEngine::toggleEnglish(fcitx::InputContext* context) {
+  // The double tap runs before keyEvent() refreshes the options, so make sure
+  // the key handler sees the current ones.
+  keyHandler_->setPlusOptions(plusOptionsFromConfig());
+  if (!keyHandler_->toggleEnglishMode(state_.get(),
+          [this, context](std::unique_ptr<InputState> next) {
+            enterNewState(context, std::move(next));
+          })) {
+    return false;
+  }
+  context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+  return true;
+}
+
 KeyHandler::PlusOptions McBopomofoEngine::plusOptionsFromConfig() const {
   KeyHandler::PlusOptions o;
   o.emoji = config_.plusEmoji.value();
@@ -688,9 +703,26 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   for (const auto& k : config_.plusEnglishToggleKeys.value()) {
     if (k.isValid()) englishToggleKeys_.push_back(k.normalize());
   }
-  if (!englishToggleKeys_.empty()) {
-    keyHandler_->setEnglishShortcutLabel(
-        englishToggleKeys_.front().toString(fcitx::KeyStringFormat::Localized));
+  englishDoubleTapSyms_.clear();
+  std::string doubleTapLabel;
+  for (const auto& k : config_.plusEnglishDoubleTapKeys.value()) {
+    // Only bare modifiers: a printable key would also type a character.
+    if (!k.isValid() || !k.isModifier()) continue;
+    englishDoubleTapSyms_.push_back(k.sym());
+    if (doubleTapLabel.empty()) {
+      doubleTapLabel = fcitx::Key(k.sym()).toString(fcitx::KeyStringFormat::Localized) + " ×2";
+    }
+  }
+  englishDoubleTap_.setWindowMs(config_.plusEnglishDoubleTapMs.value());
+  englishDoubleTap_.reset();
+  std::string comboLabel =
+      englishToggleKeys_.empty()
+          ? std::string()
+          : englishToggleKeys_.front().toString(fcitx::KeyStringFormat::Localized);
+  if (!comboLabel.empty() && !doubleTapLabel.empty()) {
+    keyHandler_->setEnglishShortcutLabel(comboLabel + " / " + doubleTapLabel);
+  } else if (!comboLabel.empty() || !doubleTapLabel.empty()) {
+    keyHandler_->setEnglishShortcutLabel(comboLabel.empty() ? doubleTapLabel : comboLabel);
   }
   keyHandler_->englishLexicon().clear();
   if (config_.plusEnglish.value()) {
@@ -819,6 +851,20 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
     return;
   }
 
+  if (!englishDoubleTapSyms_.empty() && config_.plusEnglish.value()) {
+    auto* ic = keyEvent.inputContext();
+    bool sensitive = ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive);
+    bool watched = std::find(englishDoubleTapSyms_.begin(), englishDoubleTapSyms_.end(),
+                             keyEvent.rawKey().sym()) != englishDoubleTapSyms_.end();
+    int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (englishDoubleTap_.onKey(watched, keyEvent.isRelease(), now) && !sensitive &&
+        toggleEnglish(ic)) {
+      keyEvent.filterAndAccept();
+      return;
+    }
+  }
+
   if (keyEvent.isRelease()) {
     return;
   }
@@ -843,15 +889,9 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
     };
   }
   if (!sensitiveContext_ && config_.plusEnglish.value() &&
-      key.checkKeyList(englishToggleKeys_)) {
-    if (keyHandler_->toggleEnglishMode(state_.get(),
-            [this, context](std::unique_ptr<InputState> next) {
-              enterNewState(context, std::move(next));
-            })) {
-      keyEvent.filterAndAccept();
-      context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
-      return;
-    }
+      key.checkKeyList(englishToggleKeys_) && toggleEnglish(context)) {
+    keyEvent.filterAndAccept();
+    return;
   }
   if (auto* tool = dynamic_cast<InputStates::PlusTool*>(state_.get())) {
     if (sensitiveContext_) {

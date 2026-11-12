@@ -75,6 +75,17 @@ smile 🙂
   ```
   修飾鍵要寫 `Control` `Alt` `Shift` `Super`（大小寫要對，`Ctrl`、`control` 不會被 fcitx 認得）。改完執行 `fcitx5 -r -d` 或切換一次輸入法。
 
+- `Plus: English mode double-tap key`：**連按兩下**的切換鍵（預設關）。只能設修飾鍵，例如 `右 Shift`、`右 Ctrl`、`右 Alt`；在設定介面點按鈕後單按一下該鍵即可。
+  - 300 ms 內放開再按一次才算（`Plus: English mode double-tap window` 可調 100–1000 ms），按住太久不算。
+  - 拿來當修飾鍵用（`右 Shift + A` 打大寫）**不會**誤觸。
+  - 和組合鍵可以同時使用，作用完全一樣：進入 `[EN]`、離開並上屏、或把提示的那串按鍵轉成英文；提示文字會同時顯示兩種（`Ctrl+Shift+Space / Right Shift ×2 → GitHub`）。
+  - 設定檔寫法（放在檔案最後）：
+    ```ini
+    [PlusEnglishDoubleTapKeys]
+    0=Shift_R
+    ```
+  - 不建議用 `左 Shift`：fcitx5 的 `AltTriggerKeys` 預設是左 Shift，會搶按鍵。
+
   避開已被佔用的鍵：`Ctrl+Shift+E`（Ghostty 分割視窗）、`Ctrl+Space`（fcitx5 預設切換輸入法）、`Super+Space`（若有設 fcitx5 群組切換）。
 
 | 按鍵 | 在 `[EN]` 模式中 |
