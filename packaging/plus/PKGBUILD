@@ -1,0 +1,23 @@
+# Builds from the local working tree (no network).
+pkgname=fcitx5-mcbopomofo-plus
+pkgver=3.1.1.plus1
+pkgrel=1
+pkgdesc="McBopomofo for fcitx5 with Plus features (emoji, calculator, initials, typo correction)"
+arch=(x86_64)
+url="https://github.com/openvanilla/fcitx5-mcbopomofo"
+license=(MIT)
+depends=(fcitx5 fmt icu json-c)
+makedepends=(cmake ninja extra-cmake-modules gettext)
+provides=(fcitx5-mcbopomofo)
+conflicts=(fcitx5-mcbopomofo fcitx5-mcbopomofo-git)
+options=(!debug)
+_src=$(realpath "$startdir/../..")
+build() {
+  cmake -S "$_src" -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_BUILD_TYPE=Release -DENABLE_TEST=Off
+  cmake --build build
+}
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 "$_src/LICENSE.txt" "$pkgdir/usr/share/licenses/$pkgname/LICENSE.txt"
+}

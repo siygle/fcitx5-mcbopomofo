@@ -1,0 +1,16 @@
+# Exact snapshot of the originally installed fcitx5-mcbopomofo-git (rollback).
+pkgname=fcitx5-mcbopomofo-git
+pkgver=3.1.1.r8.faa4972
+pkgrel=1
+pkgdesc="McBopomofo for fcitx5 (original, snapshot for rollback)"
+arch=(x86_64)
+url="https://github.com/openvanilla/fcitx5-mcbopomofo"
+license=(MIT)
+depends=(fcitx5 fmt)
+provides=(fcitx5-mcbopomofo)
+conflicts=(fcitx5-mcbopomofo fcitx5-mcbopomofo-plus)
+options=(!strip !debug)
+source=(original-files.tar)
+noextract=(original-files.tar)
+sha256sums=(SKIP)
+package() { bsdtar -xpf "$srcdir/original-files.tar" -C "$pkgdir"; }

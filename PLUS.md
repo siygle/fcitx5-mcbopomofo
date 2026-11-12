@@ -22,3 +22,14 @@ cmake --build build
 ctest --test-dir build           # 含私有 fcitx5 實例的按鍵整合測試
 sudo cmake --install build && fcitx5 -r -d
 ```
+
+## 切換／還原（Rollback）
+原本安裝的 `fcitx5-mcbopomofo-git` 已原樣備份成 pacman 套件（`packaging/backup/`，25 個檔案逐位元驗證相同）。
+兩個套件互相衝突，pacman 會原子性地互換，資料庫保持正確。
+
+```bash
+packaging/switch.sh status     # 目前安裝哪個
+packaging/switch.sh plus       # 換成 Plus（會先備份 ~/.config/fcitx5/conf/mcbopomofo.conf 與使用者詞庫）
+packaging/switch.sh original   # 還原成原本的小麥注音
+```
+使用者詞庫（`~/.local/share/fcitx5/mcbopomofo/`）兩者共用，切換時不會被更動。

@@ -10,3 +10,9 @@ CMakeCache.txt
 .DS_Store
 *.pot~
 *.po~
+packaging/*/src/
+packaging/*/pkg/
+packaging/*/build/
+packaging/*/*.pkg.tar.zst
+packaging/backup/original-files.tar*
+packaging/backup/user-config/
