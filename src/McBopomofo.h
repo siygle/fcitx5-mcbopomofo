@@ -336,6 +336,7 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   bool sensitiveContext_ = false;
   // In English mode, Enter commits what was typed unless ↑/↓ picked another.
   bool englishCandidateMoved_ = false;
+  fcitx::KeyList englishToggleKeys_;
   KeyHandler::PlusOptions plusOptionsFromConfig() const;
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;

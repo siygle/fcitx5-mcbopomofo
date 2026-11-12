@@ -8,6 +8,7 @@
 #include <fcitx/inputcontextmanager.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/instance.h>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -118,12 +119,18 @@ int main() {
     ic.key(fcitx::Key(FcitxKey_Escape));
     reset();
     // English buffer mode via the default Ctrl+Shift+Space shortcut.
-    const fcitx::Key toggleEn(FcitxKey_space,
-        fcitx::KeyStates{fcitx::KeyState::Ctrl, fcitx::KeyState::Shift});
+    // Tests may override the shortcut to verify the setting is honored.
+    const char* toggleSpec = std::getenv("MCB_TEST_TOGGLE_KEY");
+    // Normalized like the settings UI stores it (Control+Alt+e -> ...+E).
+    const fcitx::Key toggleEn = fcitx::Key(toggleSpec && *toggleSpec ? toggleSpec
+                                                                      : "Control+Shift+space")
+                                    .normalize();
+    const std::string toggleLabel =
+        toggleEn.toString(fcitx::KeyStringFormat::Localized);
     reset();
     ic.type("su3cl3");  // 你好
     ic.key(toggleEn);
-    check(ic.inputPanel().preedit().toString() == "你好[EN] ", "Ctrl+Shift+Space enters [EN] keeping 你好");
+    check(ic.inputPanel().preedit().toString() == "你好[EN] ", "shortcut enters [EN] keeping 你好");
     ic.type("github");
     list = ic.inputPanel().candidateList();
     check(list && list->size() > 0 && list->candidate(0).text().toString() == "GitHub",
@@ -148,8 +155,8 @@ int main() {
     // B: hint while typing English letters as Bopomofo, shortcut converts.
     reset();
     ic.type("su3github");
-    check(ic.inputPanel().auxDown().toString().find("GitHub") != std::string::npos,
-          "hint shows → GitHub without changing input");
+    check(ic.inputPanel().auxDown().toString() == toggleLabel + " → GitHub",
+          "hint shows configured shortcut → GitHub without changing input");
     check(ic.inputPanel().preedit().toString().find("GitHub") == std::string::npos,
           "preedit still Bopomofo before shortcut");
     ic.key(toggleEn);

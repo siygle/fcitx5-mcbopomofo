@@ -147,6 +147,11 @@ if (ENABLE_TEST)
         add_test(NAME PlusIntegration COMMAND bash
             "${CMAKE_SOURCE_DIR}/scripts/test-plus-integration.sh" "${CMAKE_BINARY_DIR}")
         set_tests_properties(PlusIntegration PROPERTIES TIMEOUT 30)
+        # Same suite with a custom, hand-edited (non-normalized) shortcut.
+        add_test(NAME PlusIntegrationCustomShortcut COMMAND bash
+            "${CMAKE_SOURCE_DIR}/scripts/test-plus-integration.sh" "${CMAKE_BINARY_DIR}")
+        set_tests_properties(PlusIntegrationCustomShortcut PROPERTIES TIMEOUT 30
+            ENVIRONMENT "MCB_TEST_TOGGLE_KEY=Control+Alt+e")
 
         add_custom_target(
                 runTest

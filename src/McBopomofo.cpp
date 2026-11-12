@@ -682,9 +682,15 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
     keyHandler_->emojiShortcodes().load(
         languageModelLoader_->userDataPath() + "/plus-emoji-shortcodes.txt", true);
   }
-  if (!config_.plusEnglishToggleKeys.value().empty()) {
+  // Normalize so hand-edited configs ("Control+Shift+e") match key events,
+  // which fcitx delivers normalized ("Control+Shift+E").
+  englishToggleKeys_.clear();
+  for (const auto& k : config_.plusEnglishToggleKeys.value()) {
+    if (k.isValid()) englishToggleKeys_.push_back(k.normalize());
+  }
+  if (!englishToggleKeys_.empty()) {
     keyHandler_->setEnglishShortcutLabel(
-        config_.plusEnglishToggleKeys.value().front().toString(fcitx::KeyStringFormat::Localized));
+        englishToggleKeys_.front().toString(fcitx::KeyStringFormat::Localized));
   }
   keyHandler_->englishLexicon().clear();
   if (config_.plusEnglish.value()) {
@@ -837,7 +843,7 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
     };
   }
   if (!sensitiveContext_ && config_.plusEnglish.value() &&
-      key.checkKeyList(config_.plusEnglishToggleKeys.value())) {
+      key.checkKeyList(englishToggleKeys_)) {
     if (keyHandler_->toggleEnglishMode(state_.get(),
             [this, context](std::unique_ptr<InputState> next) {
               enterNewState(context, std::move(next));

@@ -63,7 +63,19 @@ smile 🙂
 
 設定：
 - `Plus: English buffer mode`：開關（預設關）。
-- `Plus: English mode shortcut`：切換鍵，預設 `Ctrl+Shift+Space`，可改成任何組合鍵（可設多個）。
+- `Plus: English mode shortcut`：切換鍵，預設 `Ctrl+Shift+Space`，可改成任何組合鍵，也可以設多個。提示文字會跟著顯示你設的鍵。
+
+  **改法一（建議）**：fcitx5 設定 → 輸入法 → 小麥注音 → 設定（齒輪）→ `Plus: English mode shortcut`，點按鈕後直接按想要的組合鍵。
+
+  **改法二**：編輯 `~/.config/fcitx5/conf/mcbopomofo.conf`，在檔案**最後**加上（清單區段必須放在其他設定之後）：
+  ```ini
+  [PlusEnglishToggleKeys]
+  0=Control+Alt+E
+  1=Super+space
+  ```
+  修飾鍵要寫 `Control` `Alt` `Shift` `Super`（大小寫要對，`Ctrl`、`control` 不會被 fcitx 認得）。改完執行 `fcitx5 -r -d` 或切換一次輸入法。
+
+  避開已被佔用的鍵：`Ctrl+Shift+E`（Ghostty 分割視窗）、`Ctrl+Space`（fcitx5 預設切換輸入法）、`Super+Space`（若有設 fcitx5 群組切換）。
 
 | 按鍵 | 在 `[EN]` 模式中 |
 |---|---|
