@@ -12,7 +12,8 @@
 # Both are real pacman packages that conflict with each other, so pacman
 # swaps them atomically and its database always stays accurate.
 set -euo pipefail
-here=$(cd "$(dirname "$0")" && pwd)
+# Resolve symlinks (e.g. ~/.local/bin/mcb-switch) to find the packaging dir.
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 conf_dir=${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5/conf
 data_dir=${XDG_DATA_HOME:-$HOME/.local/share}/fcitx5/mcbopomofo
 backup_root=$here/backup/user-config
