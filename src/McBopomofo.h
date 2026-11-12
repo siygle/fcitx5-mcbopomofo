@@ -99,6 +99,14 @@ FCITX_CONFIG_ENUM_NAME_WITH_I18N(KeyHandlerCtrlEnter, N_("disabled"),
 
 FCITX_CONFIGURATION(
     McBopomofoConfig,
+    fcitx::Option<bool> plusEmoji{this, "PlusEmoji", _("Plus: Emoji suggestions"), false};
+    fcitx::Option<bool> plusCalculator{this, "PlusCalculator", _("Plus: Calculator (=)"), false};
+    fcitx::Option<bool> plusToolbar{this, "PlusToolbar", _("Plus: Quick phrases and current clipboard"), false};
+    fcitx::Option<bool> plusCompletion{this, "PlusCompletion", _("Plus: Initials and partial readings"), false};
+    fcitx::Option<bool> plusTypo{this, "PlusTypo", _("Plus: Invalid-reading correction"), false};
+    fcitx::Option<bool> plusSpaceLetters{this, "PlusSpaceLetters", _("Plus: Space between Chinese and ASCII letters"), false};
+    fcitx::Option<bool> plusSpaceDigits{this, "PlusSpaceDigits", _("Plus: Space between Chinese and digits"), false};
+
     // Keyboard layout: standard, eten, etc.
     fcitx::OptionWithAnnotation<BopomofoKeyboardLayout,
                                 BopomofoKeyboardLayoutI18NAnnotation>
@@ -265,6 +273,7 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   void reloadConfig() override;
 
  private:
+  FCITX_ADDON_DEPENDENCY_LOADER(clipboard, instance_->addonManager());
   FCITX_ADDON_DEPENDENCY_LOADER(chttrans, instance_->addonManager());
   FCITX_ADDON_DEPENDENCY_LOADER(notifications, instance_->addonManager());
   fcitx::Instance* instance_;
@@ -318,6 +327,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::shared_ptr<KeyHandler> keyHandler_;
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;
+  bool completionIndexLoaded_ = false;
+  bool sensitiveContext_ = false;
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;
 

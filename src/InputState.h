@@ -303,6 +303,18 @@ struct Big5 : InputState {
   std::string hexCode;
 };
 
+// Editable Plus tools. Selection is handled separately from normal composition.
+struct PlusTool : NotEmpty {
+  enum class Kind { Calculator, Initials, Partial, Toolbar };
+  PlusTool(Kind kind, std::string input, std::string display,
+           std::vector<std::string> values)
+      : NotEmpty(display, display.size()), kind(kind), input(std::move(input)),
+        values(std::move(values)) {}
+  Kind kind;
+  std::string input;
+  std::vector<std::string> values;
+};
+
 struct SelectingDateMacro : InputState {
   explicit SelectingDateMacro(
       const std::function<std::string(std::string)>& converter);

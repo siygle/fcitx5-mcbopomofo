@@ -29,9 +29,11 @@
 #include <fcitx/inputcontext.h>
 #include <fcitx/userinterfacemanager.h>
 #include <fmt/format.h>
+#include <clipboard_public.h>
 #include <notifications_public.h>  // from fcitx-module/notifications
 
 #include <memory>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -655,6 +657,19 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   }
 
   keyHandler_->setInputMode(mode);
+  keyHandler_->setPlusOptions({config_.plusEmoji.value(), config_.plusCalculator.value(),
+      config_.plusToolbar.value(), config_.plusCompletion.value(), config_.plusTypo.value()});
+  if (config_.plusCompletion.value() && !completionIndexLoaded_) {
+    completionIndexLoaded_ = keyHandler_->loadCompletionIndex(
+        fcitx5_compat::locate("data/mcbopomofo-data.txt"));
+  }
+  std::vector<std::string> quickPhrases;
+  std::ifstream quickFile(languageModelLoader_->userDataPath() + "/plus-quick-phrases.txt");
+  std::string line;
+  while (quickPhrases.size() < 100 && std::getline(quickFile, line)) {
+    if (!line.empty() && line[0] != '#' && line.size() <= 4096) quickPhrases.push_back(line);
+  }
+  keyHandler_->setQuickPhrases(std::move(quickPhrases));
 
   // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
   const auto* layout =
@@ -775,6 +790,46 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
   fcitx::InputContext* context = keyEvent.inputContext();
   fcitx::Key key = keyEvent.key();
   fcitx::Key origKey = keyEvent.rawKey();
+  sensitiveContext_ = context->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive);
+  // Never read clipboard or offer Plus tools in password/sensitive contexts.
+  keyHandler_->setPlusOptions(sensitiveContext_ ? KeyHandler::PlusOptions{} :
+      KeyHandler::PlusOptions{config_.plusEmoji.value(), config_.plusCalculator.value(),
+      config_.plusToolbar.value(), config_.plusCompletion.value(), config_.plusTypo.value()});
+  keyHandler_->clipboardProvider = {};
+  if (!sensitiveContext_ && config_.plusToolbar.value()) {
+    keyHandler_->clipboardProvider = [this, ref = context->watch()]() -> std::string {
+      auto* ic = ref.get();
+      if (!ic || !ic->hasFocus() ||
+          ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive) || !clipboard()) return {};
+      return clipboard()->call<fcitx::IClipboard::clipboard>(ic);
+    };
+  }
+  if (auto* tool = dynamic_cast<InputStates::PlusTool*>(state_.get())) {
+    if (sensitiveContext_) {
+      keyHandler_->reset();
+      enterNewState(context, std::make_unique<InputStates::EmptyIgnoringPrevious>());
+      return;
+    }
+    auto callback = [this, context](std::unique_ptr<InputState> next) {
+      enterNewState(context, std::move(next));
+    };
+    keyEvent.filterAndAccept();
+    auto* list = dynamic_cast<fcitx::CommonCandidateList*>(context->inputPanel().candidateList().get());
+    if (list && key.check(FcitxKey_Down)) list->nextCandidate();
+    else if (list && key.check(FcitxKey_Up)) list->prevCandidate();
+    else if (list && key.check(FcitxKey_Return) && !tool->values.empty()) {
+      int index = list->cursorIndex();
+      if (index >= 0 && index < list->size()) list->candidate(index).select(context);
+    } else if (list && (origKey.states() & fcitx::KeyState::Shift) &&
+               origKey.code() >= kFcitxRawKeycode_1 && origKey.code() <= kFcitxRawKeycode_9) {
+      int index = origKey.code() - kFcitxRawKeycode_1;
+      if (index < list->size()) list->candidate(index).select(context);
+    } else {
+      keyHandler_->handlePlusTool(MapFcitxKey(key, origKey), tool, callback, []() {});
+    }
+    context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+    return;
+  }
 
   if (key.states() & fcitx::KeyState::Alt ||
       key.states() & fcitx::KeyState::Super) {
@@ -1516,6 +1571,9 @@ void McBopomofoEngine::enterNewState(fcitx::InputContext* context,
     // Transition to Empty state as required by the spec: see
     // EmptyIgnoringPrevious's own definition for why.
     state_ = std::make_unique<InputStates::Empty>();
+  } else if (auto* tool = dynamic_cast<InputStates::PlusTool*>(currentPtr)) {
+    handleCandidatesState(context, prevPtr, tool);
+    updatePreedit(context, tool);
   } else if (auto* committing =
                  dynamic_cast<InputStates::Committing*>(currentPtr)) {
     handleCommittingState(context, prevPtr, committing);
@@ -1597,7 +1655,8 @@ void McBopomofoEngine::handleCommittingState(fcitx::InputContext* context,
   context->inputPanel().reset();
   context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
   if (!current->text.empty()) {
-    context->commitString(current->text);
+    context->commitString(sensitiveContext_ ? current->text :
+        Plus::AutoSpace(current->text, config_.plusSpaceLetters.value(), config_.plusSpaceDigits.value()));
   }
   context->updatePreedit();
 }
@@ -1628,7 +1687,8 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
   InputStates::IcuTransformInput* icuTransformInput =
       dynamic_cast<InputStates::IcuTransformInput*>(state_.get());
 
-  bool useShiftKey = numberInput != nullptr || icuTransformInput != nullptr ||
+  auto* plusTool = dynamic_cast<InputStates::PlusTool*>(current);
+  bool useShiftKey = plusTool != nullptr || numberInput != nullptr || icuTransformInput != nullptr ||
                      associatedPhrasesPlain != nullptr;
 
   if ((associatedPhrases != nullptr && associatedPhrases->autoTriggered)) {
@@ -1690,7 +1750,15 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
       dynamic_cast<InputStates::SelectingDateMacro*>(current);
   auto* customMenu = dynamic_cast<InputStates::CustomMenu*>(current);
 
-  if (choosing != nullptr) {
+  if (plusTool != nullptr) {
+    for (const auto& value : plusTool->values) {
+      candidateList->append(std::make_unique<McBopomofoDirectInsertWord>(
+          fcitx::Text(value), value, [this, callback](std::unique_ptr<InputState> next) {
+            keyHandler_->reset();
+            callback(std::move(next));
+          }));
+    }
+  } else if (choosing != nullptr) {
     // Construct the candidate list with special care for candidates that have
     // the same values. The display text of such a candidate will be in the
     // form of "value (reading)" to help user disambiguate those candidates.

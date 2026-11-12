@@ -10,3 +10,4 @@ Configurable=True
 
 [Addon/OptionalDependencies]
 0=chttrans
+1=clipboard

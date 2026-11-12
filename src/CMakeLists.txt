@@ -7,7 +7,7 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 find_package(PkgConfig REQUIRED)
 find_package(Fcitx5Core REQUIRED)
 find_package(Fcitx5Utils REQUIRED)
-find_package(Fcitx5Module REQUIRED COMPONENTS Notifications)
+find_package(Fcitx5Module REQUIRED COMPONENTS Notifications Clipboard)
 find_package(fmt REQUIRED)
 find_package(Gettext REQUIRED)
 find_package(ICU COMPONENTS uc i18n REQUIRED)
@@ -40,6 +40,8 @@ set(MCBOPOMOFO_LIB_SOURCES
     InputMacro.h
     InputState.cpp
     InputState.h
+    PlusFeatures.cpp
+    PlusFeatures.h
     KeyHandler.cpp
     KeyHandler.h
     LanguageModelLoader.cpp
@@ -76,7 +78,7 @@ include_directories(Big5Utils)
 
 add_library(mcbopomofo MODULE McBopomofo.cpp)
 target_compile_options(mcbopomofo PRIVATE -Wno-unknown-pragmas)
-target_link_libraries(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notifications McBopomofoLib fmt::fmt ${JSONC_LIBRARIES})
+target_link_libraries(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notifications Fcitx5::Module::Clipboard McBopomofoLib fmt::fmt ${JSONC_LIBRARIES})
 target_include_directories(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notifications fmt::fmt)
 set_target_properties(mcbopomofo PROPERTIES PREFIX "")
 target_compile_definitions(mcbopomofo PRIVATE FCITX_GETTEXT_DOMAIN=\"fcitx5-mcbopomofo\")
@@ -124,7 +126,7 @@ if (ENABLE_TEST)
         endif()
 
         # Test target declarations.
-        add_executable(McBopomofoTest KeyHandlerTest.cpp TimestampedPathTest.cpp)
+        add_executable(McBopomofoTest KeyHandlerTest.cpp TimestampedPathTest.cpp PlusFeaturesTest.cpp)
         target_compile_options(McBopomofoTest PRIVATE -Wno-unknown-pragmas)
         target_link_libraries(McBopomofoTest PRIVATE Fcitx5::Core GTest::gtest_main GTest::gmock_main McBopomofoLib fmt::fmt ${JSONC_LIBRARIES})
         target_include_directories(McBopomofoTest PRIVATE Fcitx5::Core fmt::fmt)
@@ -133,6 +135,12 @@ if (ENABLE_TEST)
 
         include(GoogleTest)
         gtest_discover_tests(McBopomofoTest)
+        add_executable(PlusIntegrationTest PlusIntegrationTest.cpp)
+        target_link_libraries(PlusIntegrationTest PRIVATE Fcitx5::Core)
+        add_dependencies(PlusIntegrationTest mcbopomofo)
+        add_test(NAME PlusIntegration COMMAND bash
+            "${CMAKE_SOURCE_DIR}/scripts/test-plus-integration.sh" "${CMAKE_BINARY_DIR}")
+        set_tests_properties(PlusIntegration PROPERTIES TIMEOUT 30)
 
         add_custom_target(
                 runTest

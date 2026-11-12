@@ -37,6 +37,7 @@
 #include "InputState.h"
 #include "Key.h"
 #include "LanguageModelLoader.h"
+#include "PlusFeatures.h"
 
 namespace McBopomofo {
 
@@ -125,6 +126,23 @@ class KeyHandler {
   void excludePhrase(const std::string& reading, const std::string& value);
 
   void reset();
+
+  struct PlusOptions {
+    bool emoji = false;
+    bool calculator = false;
+    bool toolbar = false;
+    bool completion = false;
+    bool typo = false;
+  };
+  void setPlusOptions(PlusOptions options) { plusOptions_ = options; }
+  bool loadCompletionIndex(const std::string& path) { return completionIndex_.load(path); }
+  void setQuickPhrases(std::vector<std::string> phrases) { quickPhrases_ = std::move(phrases); }
+  std::function<std::string()> clipboardProvider;
+  std::unique_ptr<InputStates::PlusTool> buildPlusTool(
+      InputStates::PlusTool::Kind kind, const std::string& input = "");
+  bool handlePlusTool(Key key, InputStates::PlusTool* state,
+                      StateCallback callback, ErrorCallback error);
+  void commitPlusTool(const std::string& value, StateCallback callback);
 
 #pragma region Dictionary Services
 
@@ -243,6 +261,11 @@ class KeyHandler {
 
  private:
   void clearReading();
+  PlusOptions plusOptions_;
+  Plus::CompletionIndex completionIndex_;
+  std::string rawReadingKeys_;
+  std::vector<std::string> quickPhrases_;
+  std::unique_ptr<InputStates::PlusTool> typoSuggestions();
 
   bool handleBig5(Key key, McBopomofo::InputStates::Big5* state,
                   StateCallback stateCallback,

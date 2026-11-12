@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <unordered_set>
 #include <vector>
 
 #include "Big5Utils/Big5Utils.h"
@@ -121,16 +122,44 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
   if (key.ascii == '\\' && key.ctrlPressed) {
     auto seq = std::make_unique<InputStates::StateSequence>();
     seq->push_back(std::make_unique<InputStates::Empty>());
-    seq->push_back(std::make_unique<InputStates::SelectingFeature>(
+    auto menu = std::make_unique<InputStates::SelectingFeature>(
         [this](std::string input) {
           auto* lm = dynamic_cast<McBopomofoLM*>(this->lm_.get());
           if (lm != nullptr) {
             return lm->convertMacro(input);
           }
           return input;
-        }));
+        });
+    if (plusOptions_.calculator) menu->features.emplace_back("計算器", [this]() {
+      return buildPlusTool(InputStates::PlusTool::Kind::Calculator);
+    });
+    if (plusOptions_.completion) menu->features.emplace_back("首注音（每音節一鍵）", [this]() {
+      return buildPlusTool(InputStates::PlusTool::Kind::Initials);
+    });
+    if (plusOptions_.toolbar) menu->features.emplace_back("常用語／剪貼簿／符號", [this]() {
+      return buildPlusTool(InputStates::PlusTool::Kind::Toolbar);
+    });
+    seq->push_back(std::move(menu));
     stateCallback(std::move(seq));
     reset();
+    return true;
+  }
+
+  if (auto* tool = dynamic_cast<InputStates::PlusTool*>(state)) {
+    return handlePlusTool(key, tool, stateCallback, errorCallback);
+  }
+  if (plusOptions_.calculator && key.ascii == '=' && !key.ctrlPressed &&
+      !key.shiftPressed && grid_.length() == 0 && reading_.isEmpty()) {
+    stateCallback(buildPlusTool(InputStates::PlusTool::Kind::Calculator));
+    return true;
+  }
+  if (plusOptions_.completion && key.name == Key::KeyName::DOWN &&
+      !reading_.isEmpty()) {
+    auto prefixes = grid_.readings();
+    prefixes.insert(prefixes.begin() + static_cast<ptrdiff_t>(grid_.cursor()),
+                    reading_.composedString());
+    stateCallback(buildPlusTool(InputStates::PlusTool::Kind::Partial,
+        AssociatedPhrasesV2::CombineReadings(prefixes)));
     return true;
   }
 
@@ -168,6 +197,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
   }
   if (reading_.isValidKey(simpleAscii)) {
     reading_.combineKey(simpleAscii);
+    if (rawReadingKeys_.size() < 8) rawReadingKeys_ += simpleAscii;
     keyConsumedByReading = true;
     // If asciiChar does not lead to a tone marker, we are done. Tone marker
     // would lead to composing of the reading, which is handled after this.
@@ -188,6 +218,13 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     std::string syllable = reading_.syllable().composedString();
 
     if (!lm_->hasUnigrams(syllable)) {
+      if (plusOptions_.typo) {
+        auto suggestions = typoSuggestions();
+        if (suggestions && !suggestions->values.empty()) {
+          stateCallback(std::move(suggestions));
+          return true;
+        }
+      }
       errorCallback();
 
       if (keepInvalidSyllableForFurtherInput_) {
@@ -582,6 +619,10 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
 void KeyHandler::candidateSelected(
     const InputStates::ChoosingCandidate::Candidate& candidate,
     size_t originalCursor, StateCallback stateCallback) {
+  if (candidate.reading == "_plus_emoji") {
+    commitPlusTool(candidate.value, stateCallback);
+    return;
+  }
   if (inputMode_ == InputMode::PlainBopomofo) {
     reset();
     std::string reading = candidate.reading;
@@ -763,6 +804,7 @@ void KeyHandler::reset() {
 
 void KeyHandler::clearReading() {
   reading_.clear();
+  rawReadingKeys_.clear();
   readingCompositionFailed_ = false;
 }
 
@@ -1122,6 +1164,7 @@ bool KeyHandler::handleDeleteKeys(Key key, McBopomofo::InputState* state,
   } else {
     if (key.ascii == Key::BACKSPACE) {
       reading_.backspace();
+      rawReadingKeys_ = reading_.keyboardLayout()->keySequenceFromSyllable(reading_.syllable());
       readingCompositionFailed_ = false;
     } else {
       // Del not supported when bopomofo reading is active.
@@ -1602,6 +1645,18 @@ KeyHandler::buildChoosingCandidateState(InputStates::NotEmpty* nonEmptyState,
     stateCandidates.emplace_back(c.reading, c.value, c.rawValue);
   }
 
+  if (plusOptions_.emoji && inputMode_ == InputMode::McBopomofo &&
+      reading_.isEmpty() && grid_.cursor() == grid_.length()) {
+    for (const auto& value : Plus::EmojiForText(nonEmptyState->composingBuffer)) {
+      std::vector<InputStates::ChoosingCandidate::Candidate> expanded;
+      size_t position = std::min<size_t>(2, stateCandidates.size());
+      for (size_t i = 0; i <= stateCandidates.size(); ++i) {
+        if (i == position) expanded.emplace_back("_plus_emoji", value, "");
+        if (i < stateCandidates.size()) expanded.push_back(stateCandidates[i]);
+      }
+      stateCandidates = std::move(expanded);
+    }
+  }
   return std::make_unique<InputStates::ChoosingCandidate>(
       nonEmptyState->composingBuffer, nonEmptyState->cursorIndex,
       originalCursor, std::move(stateCandidates));
@@ -1947,6 +2002,117 @@ void KeyHandler::pinNodeWithAssociatedPhrase(
 
   walk();
   // Cursor is already at accumulatedCursor, so no more work here.
+}
+
+std::unique_ptr<InputStates::PlusTool> KeyHandler::buildPlusTool(
+    InputStates::PlusTool::Kind kind, const std::string& input) {
+  using Kind = InputStates::PlusTool::Kind;
+  std::vector<std::string> values;
+  std::string display;
+  if (kind == Kind::Calculator) {
+    display = "[計算器] =" + input;
+    if (auto result = Plus::Calculate(input)) values.push_back(*result);
+  } else if (kind == Kind::Toolbar) {
+    display = "[工具列] 常用語／目前剪貼簿／符號";
+    values = quickPhrases_;
+    if (clipboardProvider) {
+      auto clipboard = clipboardProvider();
+      if (!clipboard.empty() && clipboard.size() <= 4096) values.push_back(clipboard);
+    }
+    for (const auto& symbol : {"→", "←", "✓", "★", "……", "😊", "👍", "❤️"}) values.emplace_back(symbol);
+  } else {
+    std::string reading = input;
+    if (kind == Kind::Initials) {
+      reading.clear();
+      for (char c : input) {
+        auto components = reading_.keyboardLayout()->keyToComponents(c);
+        if (components.empty()) continue;
+        auto syllable = Formosa::Mandarin::BPMF(components.front());
+        if (!reading.empty()) reading += '-';
+        reading += syllable.composedString();
+      }
+    }
+    display = kind == Kind::Initials ? "[首注音] " : "[部分讀音] ";
+    display += reading + "  ⇧1–9 選字／Enter 首選／Esc 返回";
+    for (const auto& phrase : completionIndex_.query(reading)) {
+      // Respect exclusions and user phrase/replacement converters in the live LM.
+      for (const auto& unigram : lm_->getUnigrams(phrase.reading)) {
+        if (unigram.value() == phrase.value || unigram.rawValue() == phrase.value) {
+          values.push_back(unigram.value());
+          break;
+        }
+      }
+    }
+  }
+  return std::make_unique<InputStates::PlusTool>(kind, input, display, std::move(values));
+}
+
+bool KeyHandler::handlePlusTool(Key key, InputStates::PlusTool* state,
+                               StateCallback callback, ErrorCallback error) {
+  using Kind = InputStates::PlusTool::Kind;
+  if (key.ascii == Key::ESC) {
+    if (grid_.length() || !reading_.isEmpty()) callback(buildInputtingState());
+    else callback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+    return true;
+  }
+  if (key.ascii == Key::RETURN && !key.ctrlPressed) {
+    if (!state->values.empty()) commitPlusTool(state->values.front(), callback);
+    else error();
+    return true;
+  }
+  if (key.ctrlPressed || key.shiftPressed) return false;
+  if (state->kind == Kind::Toolbar || state->kind == Kind::Partial) return false;
+  auto input = state->input;
+  if (key.ascii == Key::BACKSPACE) {
+    if (!input.empty()) input.pop_back();
+  } else if (state->kind == Kind::Calculator && key.ascii &&
+             std::string("0123456789.+-*/%() ").find(key.ascii) != std::string::npos && input.size() < 256) {
+    input += key.ascii;
+  } else if (state->kind == Kind::Initials && key.ascii && input.size() < 8) {
+    auto cs = reading_.keyboardLayout()->keyToComponents(key.ascii);
+    if (cs.empty() || Formosa::Mandarin::BPMF(cs.front()).hasToneMarker()) {
+      error(); return true;
+    }
+    input += key.ascii;
+  } else return false;
+  callback(buildPlusTool(state->kind, input));
+  return true;
+}
+
+void KeyHandler::commitPlusTool(const std::string& value, StateCallback callback) {
+  reset();
+  callback(std::make_unique<InputStates::Committing>(value));
+}
+
+std::unique_ptr<InputStates::PlusTool> KeyHandler::typoSuggestions() {
+  // The unmodified syllable has already failed lookup. Never change valid input.
+  if (reading_.keyboardLayout() == Formosa::Mandarin::BopomofoKeyboardLayout::HanyuPinyinLayout()) return nullptr;
+  std::vector<std::pair<double, std::string>> ranked;
+  std::unordered_set<std::string> seen;
+  for (const auto& keys : Plus::TypoKeys(rawReadingKeys_)) {
+    // A candidate must contain only keys understood by this layout.
+    bool valid = std::all_of(keys.begin(), keys.end(), [this](char c) {
+      return !reading_.keyboardLayout()->keyToComponents(c).empty();
+    });
+    if (!valid) continue;
+    auto syllable = reading_.keyboardLayout()->syllableFromKeySequence(keys);
+    auto r = syllable.composedString();
+    if (r.empty() || !seen.insert(r).second) continue;
+    for (const auto& unigram : lm_->getUnigrams(r)) {
+      // Preserve both sides of the composition and insert only at the cursor.
+      auto composed = getComposedString(grid_.cursor());
+      ranked.emplace_back(unigram.score(), composed.head + unigram.value() + composed.tail);
+    }
+  }
+  std::stable_sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  std::vector<std::string> values;
+  seen.clear();
+  for (const auto& [score, value] : ranked) {
+    if (seen.insert(value).second) values.push_back(value);
+    if (values.size() == 30) break;
+  }
+  return std::make_unique<InputStates::PlusTool>(InputStates::PlusTool::Kind::Partial,
+      "", "[修正無效讀音] " + reading_.composedString() + "  Enter 選字／Esc 返回", std::move(values));
 }
 
 void KeyHandler::walk() { latestWalk_ = grid_.walk(); }

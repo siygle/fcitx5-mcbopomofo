@@ -523,4 +523,77 @@ TEST_F(KeyHandlerTest, BopomofoAnnotation) {
   keyHandler_->setBopomofoFontAnnotationSupportEnabled(false);
 }
 
+TEST_F(KeyHandlerTest, PlusCalculatorCommitAndCancel) {
+  keyHandler_->setPlusOptions({false, true, false, false, false});
+  auto state = handleKeySequence(asciiKeys("=1+2*3\r"));
+  auto* committed = dynamic_cast<InputStates::Committing*>(state.get());
+  ASSERT_NE(committed, nullptr);
+  EXPECT_EQ(committed->text, "7");
+  EXPECT_TRUE(keyHandler_->buildInputtingState()->composingBuffer.empty());
+  state = handleKeySequence(asciiKeys("=9\x1b"));
+  EXPECT_NE(dynamic_cast<InputStates::Empty*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusCalculatorRejectsZeroDivision) {
+  keyHandler_->setPlusOptions({false, true, false, false, false});
+  auto state = handleKeySequence(asciiKeys("=1/0\r"), true, true);
+  ASSERT_NE(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
+TEST_F(KeyHandlerTest, PlusInitialsUsesActiveLayout) {
+  keyHandler_->setPlusOptions({false, false, false, true, false});
+  ASSERT_TRUE(keyHandler_->loadCompletionIndex(kTestDataPath));
+  auto tool = keyHandler_->buildPlusTool(InputStates::PlusTool::Kind::Initials, "w1");
+  EXPECT_NE(std::find(tool->values.begin(), tool->values.end(), "台北"), tool->values.end());
+  keyHandler_->setKeyboardLayout(Formosa::Mandarin::BopomofoKeyboardLayout::ETenLayout());
+  tool = keyHandler_->buildPlusTool(InputStates::PlusTool::Kind::Initials, "tb");
+  EXPECT_NE(std::find(tool->values.begin(), tool->values.end(), "台北"), tool->values.end());
+}
+
+TEST_F(KeyHandlerTest, PlusPartialReadingDownAndEscape) {
+  keyHandler_->setPlusOptions({false, false, false, true, false});
+  ASSERT_TRUE(keyHandler_->loadCompletionIndex(kTestDataPath));
+  auto keys = asciiKeys("w96" "1");  // ㄊㄞˊ + unfinished ㄅ
+  keys.push_back(Key::namedKey(Key::KeyName::DOWN));
+  auto state = handleKeySequence(keys);
+  auto* tool = dynamic_cast<InputStates::PlusTool*>(state.get());
+  ASSERT_NE(tool, nullptr);
+  EXPECT_NE(std::find(tool->values.begin(), tool->values.end(), "台北"), tool->values.end());
+  auto oldBuffer = keyHandler_->buildInputtingState()->composingBuffer;
+  keyHandler_->handle(Key::asciiKey(Key::ESC), tool,
+      [&state](auto next) { state = std::move(next); }, []() {});
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->composingBuffer, oldBuffer);
+}
+
+TEST_F(KeyHandlerTest, PlusTypoOnlyForInvalidReadings) {
+  keyHandler_->setPlusOptions({false, false, false, false, true});
+  auto state = handleKeySequence(asciiKeys("su3"));
+  EXPECT_NE(dynamic_cast<InputStates::Inputting*>(state.get()), nullptr);
+  keyHandler_->reset();
+  state = handleKeySequence(asciiKeys("ri3"));  // ㄐㄛˇ is invalid.
+  auto* tool = dynamic_cast<InputStates::PlusTool*>(state.get());
+  ASSERT_NE(tool, nullptr);
+  EXPECT_FALSE(tool->values.empty());
+}
+
+TEST_F(KeyHandlerTest, PlusToolbarReadsClipboardOnlyOnRequest) {
+  int calls = 0;
+  keyHandler_->clipboardProvider = [&calls]() { ++calls; return "clipboard text"; };
+  keyHandler_->setQuickPhrases({"謝謝您", "稍後回覆"});
+  handleKeySequence(asciiKeys("su3"));
+  EXPECT_EQ(calls, 0);
+  auto tool = keyHandler_->buildPlusTool(InputStates::PlusTool::Kind::Toolbar);
+  EXPECT_EQ(calls, 1);
+  ASSERT_GE(tool->values.size(), 3u);
+  EXPECT_EQ(tool->values[0], "謝謝您");
+  EXPECT_EQ(tool->values[2], "clipboard text");
+}
+
+TEST_F(KeyHandlerTest, PlusDisabledDoesNotInterceptEquals) {
+  auto state = handleKeySequence(asciiKeys("="));
+  EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
 }  // namespace McBopomofo
