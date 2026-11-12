@@ -1,4 +1,5 @@
 build
+voice/target/
 CMakeFiles
 cmake_install.cmake
 cmake-build-debug

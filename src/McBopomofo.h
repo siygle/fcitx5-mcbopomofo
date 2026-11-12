@@ -45,6 +45,12 @@
 #include "LanguageModelLoader.h"
 #include "PathCompat.h"
 #include "PlusDoubleTap.h"
+#ifdef ENABLE_VOICE_POC
+#include <chrono>
+#include <cstdint>
+
+#include "VoiceClient.h"
+#endif
 
 namespace McBopomofo {
 
@@ -120,6 +126,20 @@ FCITX_CONFIGURATION(
     fcitx::Option<int, fcitx::IntConstrain> plusEnglishDoubleTapMs{this, "PlusEnglishDoubleTapMs",
         _("Plus: English mode double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};
     fcitx::Option<int, fcitx::IntConstrain> plusEmojiDoubleTapMs{this, "PlusEmojiDoubleTapMs", _("Plus: Double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};
+#ifdef ENABLE_VOICE_POC
+    // Off unless the user turns it on. The hotkey is a bare modifier so it
+    // does not insert a character. Right Alt can be AltGr on some layouts.
+    fcitx::Option<bool> plusVoice{this, "PlusVoice", _("Plus: Voice input (hold to talk)"), false};
+    // AllowModifierLess is required for the default to load: fcitx rejects a
+    // modifier key whose state mask is empty unless that flag is set. The
+    // handler still only reacts to modifier keysyms (see handleVoiceKey).
+    fcitx::KeyListOption plusVoiceHotkey{this, "PlusVoiceHotkey", _("Plus: Voice push-to-talk key"),
+        {fcitx::Key("Alt_R")},
+        fcitx::KeyListConstrain({fcitx::KeyConstrainFlag::AllowModifierOnly,
+                                 fcitx::KeyConstrainFlag::AllowModifierLess})};
+    fcitx::Option<bool> plusVoiceTraditional{this, "PlusVoiceTraditional",
+        _("Plus: Convert voice output with OpenCC s2twp"), false};
+#endif
 
     // Keyboard layout: standard, eten, etc.
     fcitx::OptionWithAnnotation<BopomofoKeyboardLayout,
@@ -358,6 +378,27 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::unique_ptr<fcitx::SimpleAction> bopomofoFontAnnotationSupportAction_;
   std::unique_ptr<fcitx::SimpleAction> editUserPhrasesAction_;
   std::unique_ptr<fcitx::SimpleAction> excludedPhrasesAction_;
+
+#ifdef ENABLE_VOICE_POC
+  bool handleVoiceKey(fcitx::KeyEvent& keyEvent);
+  void onVoiceEvent(const VoiceEvent& event);
+  void abandonVoice();
+  void showVoicePreedit(fcitx::InputContext* context, const std::string& text);
+  void clearVoicePreedit(fcitx::InputContext* context);
+  void showVoiceHint(fcitx::InputContext* context, const std::string& text);
+
+  std::unique_ptr<VoiceClient> voice_;
+  fcitx::TrackableObjectReference<fcitx::InputContext> voiceIc_;
+  std::unique_ptr<fcitx::EventSourceTime> voiceHintTimer_;
+  uint64_t voiceSerial_ = 0;
+  uint64_t voiceReq_ = 0;
+  uint64_t voiceEpoch_ = 0;
+  uint64_t voiceHintEpoch_ = 0;
+  bool voiceDown_ = false;
+  bool voiceHolding_ = false;
+  bool voiceUi_ = false;
+  std::chrono::steady_clock::time_point voiceLevelAt_{};
+#endif
 };
 
 class McBopomofoEngineFactory : public fcitx::AddonFactory {

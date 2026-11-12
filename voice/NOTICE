@@ -1,0 +1,23 @@
+voxkit is a small proof of concept. Its source is MIT; see the license header
+in each file and the repository LICENSE.txt for the input-method side.
+
+Ideas and constants, not copied source, come from:
+
+- anomalyco/hex (MIT, Copyright 2026 Christopher Langton), commit
+  a7548271c1e40e1ddf5e1505a690b4c5f45a85db. Vocabulary prompt limits, Silero
+  thresholds (0.4 / 160 ms), the Qwen3-ASR and Silero artifact checksums, and
+  the choice to keep inference out of the input-method process.
+  https://github.com/anomalyco/hex
+
+- Gloridust/WowType, commit df43477. Push-to-talk with key release, partial
+  text in the preedit, and commit only on the final transcript. The WeChat
+  offline model is intentionally not used.
+  https://github.com/Gloridust/WowType
+
+Inference is transcribe.cpp via the crates.io crate transcribe-cpp 0.4.1
+(MIT, handy-computer / CJ Pais and contributors):
+https://github.com/handy-computer/transcribe.cpp
+
+Model weights are not part of this tree. They are downloaded by
+`voxkit model install` and stay under their own licenses (OpenAI Whisper MIT,
+Silero VAD MIT, Qwen3-ASR per its model card).

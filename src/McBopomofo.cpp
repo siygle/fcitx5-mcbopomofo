@@ -46,6 +46,9 @@
 #include "Key.h"
 #include "Log.h"
 #include "UTF8Helper.h"
+#ifdef ENABLE_VOICE_POC
+#include <fcitx-utils/event.h>
+#endif
 
 namespace McBopomofo {
 
@@ -582,6 +585,11 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   instance_->userInterfaceManager().registerAction(
       "mcbopomofo-user-excluded-phrases-edit", excludedPhrasesAction_.get());
 
+#ifdef ENABLE_VOICE_POC
+  voice_ = std::make_unique<VoiceClient>(instance_);
+  voice_->setCallback([this](const VoiceEvent& event) { onVoiceEvent(event); });
+#endif
+
   // Required by convention of fcitx5 modules to load config on its own.
   // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
   reloadConfig();
@@ -805,6 +813,9 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
 
 void McBopomofoEngine::reset(const fcitx::InputMethodEntry& /*unused*/,
                              fcitx::InputContextEvent& event) {
+#ifdef ENABLE_VOICE_POC
+  abandonVoice();
+#endif
   fcitx::InputContext* context = event.inputContext();
   if (context == nullptr) {
     state_ = std::make_unique<InputStates::Empty>();
@@ -850,6 +861,14 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
   if (!keyEvent.isInputContextEvent()) {
     return;
   }
+
+#ifdef ENABLE_VOICE_POC
+  // Key releases normally return below. Push-to-talk has to see the release
+  // first, the same way PlusDoubleTap does, or the microphone never stops.
+  if (handleVoiceKey(keyEvent)) {
+    return;
+  }
+#endif
 
   if (!englishDoubleTapSyms_.empty() && config_.plusEnglish.value()) {
     auto* ic = keyEvent.inputContext();
@@ -2197,6 +2216,195 @@ void McBopomofoEngine::showAndClearUserFileIssues() {
   }
   userFileIssues_.clear();
 }
+
+#ifdef ENABLE_VOICE_POC
+
+namespace {
+
+bool IsIdleState(const InputState* state) {
+  return dynamic_cast<const InputStates::Empty*>(state) != nullptr;
+}
+
+std::string VoiceErrorText(const std::string& code, const std::string& message) {
+  if (code == "model-not-ready") return _("語音模型尚未安裝（voxkit model install）");
+  if (code == "no-input") return _("找不到麥克風");
+  if (code == "disconnected") return _("語音服務已斷線");
+  if (!message.empty() && message.size() < 80) return message;
+  return _("語音發生錯誤");
+}
+
+}  // namespace
+
+void McBopomofoEngine::abandonVoice() {
+  if (voice_ && voiceReq_ != 0) voice_->cancel(voiceReq_);
+  voiceReq_ = 0;
+  voiceDown_ = false;
+  voiceHolding_ = false;
+  voiceHintEpoch_ = 0;
+  if (voiceUi_) {
+    if (auto* ic = voiceIc_.get()) clearVoicePreedit(ic);
+    voiceUi_ = false;
+  }
+}
+
+bool McBopomofoEngine::handleVoiceKey(fcitx::KeyEvent& keyEvent) {
+  if (!voice_ || !config_.plusVoice.value()) return false;
+  auto* ic = keyEvent.inputContext();
+  if (!ic) return false;
+
+  bool hotkey = false;
+  for (const auto& key : config_.plusVoiceHotkey.value()) {
+    // A printable key would also insert text, so only bare modifiers count.
+    if (key.isValid() && key.isModifier() && key.sym() == keyEvent.rawKey().sym()) {
+      hotkey = true;
+      break;
+    }
+  }
+  if (!hotkey) {
+    // A key release for something else must not cancel a hold.
+    if (keyEvent.isRelease()) return false;
+    if (voiceDown_ || voiceUi_ || voiceReq_ != 0) abandonVoice();
+    return false;
+  }
+
+  if (keyEvent.isRelease()) {
+    if (!voiceDown_) return false;
+    voiceDown_ = false;
+    if (voiceHolding_) {
+      voice_->stop(voiceReq_);
+      voiceHolding_ = false;
+      showVoicePreedit(ic, _("辨識中"));
+    }
+    keyEvent.filterAndAccept();
+    return true;
+  }
+
+  if (voiceDown_) {
+    keyEvent.filterAndAccept();
+    return true;
+  }
+
+  bool sensitive = ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive);
+  // Leave Bopomofo composition, English mode, and the candidate panel alone.
+  if (sensitive || !IsIdleState(state_.get())) return false;
+
+  voiceDown_ = true;
+  voiceIc_ = ic->watch();
+  voiceReq_ = ++voiceSerial_;
+  voiceHintEpoch_ = 0;
+  auto terms = LoadVoiceVocabulary(languageModelLoader_->userDataPath());
+  if (!voice_->start(voiceReq_, terms, config_.plusVoiceTraditional.value())) {
+    voiceReq_ = 0;
+    voiceHolding_ = false;
+    showVoiceHint(ic, _("語音服務未啟動（voxkit serve）"));
+    keyEvent.filterAndAccept();
+    return true;
+  }
+  voiceHolding_ = true;
+  showVoicePreedit(ic, _("聆聽中"));
+  keyEvent.filterAndAccept();
+  return true;
+}
+
+void McBopomofoEngine::showVoicePreedit(fcitx::InputContext* context, const std::string& text) {
+  fcitx::Text preedit;
+  if (!text.empty()) preedit.append(text, fcitx::TextFormatFlag::Underline);
+  if (context->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) {
+    context->inputPanel().setClientPreedit(preedit);
+    context->inputPanel().setPreedit(fcitx::Text());
+  } else {
+    context->inputPanel().setPreedit(preedit);
+    context->inputPanel().setClientPreedit(fcitx::Text());
+  }
+  context->updatePreedit();
+  voiceUi_ = !text.empty();
+}
+
+void McBopomofoEngine::clearVoicePreedit(fcitx::InputContext* context) {
+  context->inputPanel().setClientPreedit(fcitx::Text());
+  context->inputPanel().setPreedit(fcitx::Text());
+  context->inputPanel().setAuxDown(fcitx::Text());
+  context->updatePreedit();
+  voiceUi_ = false;
+}
+
+void McBopomofoEngine::showVoiceHint(fcitx::InputContext* context, const std::string& text) {
+  showVoicePreedit(context, text);
+  uint64_t epoch = ++voiceEpoch_;
+  voiceHintEpoch_ = epoch;
+  voiceHintTimer_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + 1600 * 1000, 0,
+      [this, epoch](fcitx::EventSourceTime* source, uint64_t) {
+        source->setEnabled(false);
+        if (voiceHintEpoch_ == epoch) {
+          if (auto* ic = voiceIc_.get()) clearVoicePreedit(ic);
+          voiceHintEpoch_ = 0;
+        }
+        return true;
+      });
+}
+
+void McBopomofoEngine::onVoiceEvent(const VoiceEvent& event) {
+  if (event.req == 0 || event.req != voiceReq_) return;
+  auto* ic = voiceIc_.get();
+  if (!ic) return;
+  switch (event.kind) {
+    case VoiceEvent::Kind::Partial: {
+      std::string shown = event.stable;
+      if (!event.tentative.empty()) {
+        if (!shown.empty()) shown.push_back(' ');
+        shown += event.tentative;
+      }
+      if (shown.empty()) shown = _("聆聽中");
+      voiceHintEpoch_ = 0;
+      showVoicePreedit(ic, shown);
+      break;
+    }
+    case VoiceEvent::Kind::Final: {
+      if (!event.text.empty() &&
+          !ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive) &&
+          IsIdleState(state_.get())) {
+        ic->commitString(event.text);
+      }
+      clearVoicePreedit(ic);
+      voiceHolding_ = false;
+      voiceReq_ = 0;
+      break;
+    }
+    case VoiceEvent::Kind::Discarded:
+      voiceHolding_ = false;
+      showVoiceHint(ic, _("（沒有聽到語音）"));
+      voiceReq_ = 0;
+      break;
+    case VoiceEvent::Kind::Error:
+      voiceHolding_ = false;
+      showVoiceHint(ic, VoiceErrorText(event.code, event.message));
+      voiceReq_ = 0;
+      break;
+    case VoiceEvent::Kind::Level: {
+      if (!voiceHolding_) break;
+      auto now = std::chrono::steady_clock::now();
+      if (voiceLevelAt_.time_since_epoch().count() != 0 &&
+          now - voiceLevelAt_ < std::chrono::milliseconds(200)) {
+        break;
+      }
+      voiceLevelAt_ = now;
+      int filled = 0;
+      if (event.rms > -45) filled = 1;
+      if (event.rms > -35) filled = 2;
+      if (event.rms > -28) filled = 3;
+      if (event.rms > -20) filled = 4;
+      if (event.rms > -12) filled = 5;
+      std::string meter = "語音 ";
+      for (int i = 0; i < 5; ++i) meter += (i < filled) ? "●" : "○";
+      ic->inputPanel().setAuxDown(fcitx::Text(meter));
+      ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+      break;
+    }
+  }
+}
+
+#endif
 
 FCITX_ADDON_FACTORY(McBopomofoEngineFactory);
 
