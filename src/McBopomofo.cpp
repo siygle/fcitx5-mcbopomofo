@@ -592,6 +592,7 @@ KeyHandler::PlusOptions McBopomofoEngine::plusOptionsFromConfig() const {
   o.calculator = config_.plusCalculator.value();
   o.toolbar = config_.plusToolbar.value();
   o.emojiShortcode = config_.plusEmojiShortcode.value();
+  o.english = config_.plusEnglish.value();
   return o;
 }
 
@@ -679,6 +680,13 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
         fcitx5_compat::locate("data/mcbopomofo-plus-emoji-shortcodes.txt"));
     keyHandler_->emojiShortcodes().load(
         languageModelLoader_->userDataPath() + "/plus-emoji-shortcodes.txt", true);
+  }
+  keyHandler_->englishLexicon().clear();
+  if (config_.plusEnglish.value()) {
+    keyHandler_->englishLexicon().load(
+        fcitx5_compat::locate("data/mcbopomofo-plus-english.txt"));
+    keyHandler_->englishLexicon().load(
+        languageModelLoader_->userDataPath() + "/plus-english.txt", true);
   }
   std::vector<std::string> quickPhrases;
   std::ifstream quickFile(languageModelLoader_->userDataPath() + "/plus-quick-phrases.txt");
@@ -822,6 +830,17 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
           ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive) || !clipboard()) return {};
       return clipboard()->call<fcitx::IClipboard::clipboard>(ic);
     };
+  }
+  if (!sensitiveContext_ && config_.plusEnglish.value() &&
+      key.checkKeyList(config_.plusEnglishToggleKeys.value())) {
+    if (keyHandler_->toggleEnglishMode(state_.get(),
+            [this, context](std::unique_ptr<InputState> next) {
+              enterNewState(context, std::move(next));
+            })) {
+      keyEvent.filterAndAccept();
+      context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+      return;
+    }
   }
   if (auto* tool = dynamic_cast<InputStates::PlusTool*>(state_.get())) {
     if (sensitiveContext_) {

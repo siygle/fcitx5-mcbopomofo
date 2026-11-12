@@ -38,6 +38,7 @@
 #include "Key.h"
 #include "LanguageModelLoader.h"
 #include "PlusEmoji.h"
+#include "PlusEnglish.h"
 #include "PlusFeatures.h"
 
 namespace McBopomofo {
@@ -133,6 +134,7 @@ class KeyHandler {
     bool calculator = false;
     bool toolbar = false;
     bool emojiShortcode = false;
+    bool english = false;
   };
   void setPlusOptions(PlusOptions options) { plusOptions_ = options; }
   // Emoji shortcode input. An invalid prefix disables the feature.
@@ -142,6 +144,11 @@ class KeyHandler {
     emojiPrefixPendingMs_ = -1;
   }
   Plus::EmojiShortcodes& emojiShortcodes() { return emojiShortcodes_; }
+  Plus::EnglishLexicon& englishLexicon() { return englishLexicon_; }
+  // English buffer mode. The frontend matches the configurable shortcut and
+  // calls this; it enters the mode, or leaves it committing what was typed.
+  // Returns false when the mode is disabled or a syllable is in progress.
+  bool toggleEnglishMode(InputState* state, const StateCallback& callback);
   // Monotonic key time in ms; set by the frontend before each handle() call.
   // Tests drive it directly. Only used for prefix double-tap detection.
   void setKeyTimeMs(int64_t ms) { keyTimeMs_ = ms; }
@@ -273,6 +280,9 @@ class KeyHandler {
   PlusOptions plusOptions_;
   Plus::EmojiPrefix emojiPrefix_;
   Plus::EmojiShortcodes emojiShortcodes_;
+  Plus::EnglishLexicon englishLexicon_;
+  void commitEnglish(const std::string& word, bool trailingSpace,
+                     const StateCallback& callback);
   int emojiDoubleTapMs_ = 300;
   int64_t keyTimeMs_ = 0;
   // Time of a first prefix tap awaiting its second tap; -1 when none.

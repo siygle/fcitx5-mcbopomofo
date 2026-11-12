@@ -117,6 +117,41 @@ int main() {
           "prefix key inside a syllable stays Bopomofo");
     ic.key(fcitx::Key(FcitxKey_Escape));
     reset();
+    // English buffer mode via the default Ctrl+Shift+Space shortcut.
+    const fcitx::Key toggleEn(FcitxKey_space,
+        fcitx::KeyStates{fcitx::KeyState::Ctrl, fcitx::KeyState::Shift});
+    reset();
+    ic.type("su3cl3");  // 你好
+    ic.key(toggleEn);
+    check(ic.inputPanel().preedit().toString() == "你好[EN] ", "Ctrl+Shift+Space enters [EN] keeping 你好");
+    ic.type("github");
+    list = ic.inputPanel().candidateList();
+    check(list && list->size() > 0 && list->candidate(0).text().toString() == "GitHub",
+          "github -> GitHub first candidate (built-in SCOWL)");
+    ic.key(fcitx::Key(FcitxKey_space));
+    check(ic.committed == "你好 GitHub ", "space commits corrected word with auto-spacing");
+    reset();
+    ic.key(toggleEn);
+    ic.type("openvanilla");
+    ic.key(toggleEn);  // Toggle again also commits.
+    check(ic.committed == "OpenVanilla", "user word list casing; toggle again commits");
+    reset();
+    ic.type("su3");  // Back in Bopomofo after leaving.
+    check(ic.inputPanel().preedit().toString() == "你", "Bopomofo resumes after English mode");
+    ic.key(fcitx::Key(FcitxKey_Escape));
+    reset();
+    ic.key(toggleEn);
+    ic.type("abc");
+    list = ic.inputPanel().candidateList();
+    if (list && list->size() > 1) list->candidate(1).select(&ic);  // pick 2nd
+    check(!ic.committed.empty(), "mouse/selection of an English candidate commits");
+    reset();
+    ic.setCapabilityFlags(fcitx::CapabilityFlag::Password);
+    ic.key(toggleEn);
+    check(ic.inputPanel().preedit().toString().find("[EN]") == std::string::npos,
+          "English mode disabled in password context");
+    ic.setCapabilityFlags(fcitx::CapabilityFlags{});
+    reset();
     ic.focusOut();
     instance.exit();
   });

@@ -69,6 +69,7 @@ configure_file(data/dictionary_service.json mcbopomofo-dictionary-service.json)
 configure_file(data/bpmfvs-pua.txt mcbopomofo-bpmfvs-pua.txt)
 configure_file(data/bpmfvs-variants.txt mcbopomofo-bpmfvs-variants.txt)
 configure_file(data/plus-emoji-shortcodes.txt mcbopomofo-plus-emoji-shortcodes.txt COPYONLY)
+configure_file(data/plus-english.txt mcbopomofo-plus-english.txt COPYONLY)
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-data.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-data-plain-bpmf.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
@@ -78,7 +79,8 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-dictionary-service.json" D
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-bpmfvs-pua.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-bpmfvs-variants.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-plus-emoji-shortcodes.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
-install(FILES data/LICENSE.gemoji DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/fcitx5-mcbopomofo-plus")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-plus-english.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
+install(FILES data/LICENSE.gemoji data/LICENSE.scowl DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/fcitx5-mcbopomofo-plus")
 
 fcitx5_translate_desktop_file(org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml.in
                               org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml XML

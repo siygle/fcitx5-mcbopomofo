@@ -114,6 +114,12 @@ static KeyHandler::PlusOptions PlusCalc() {
   return o;
 }
 
+static KeyHandler::PlusOptions PlusEnglishOn() {
+  KeyHandler::PlusOptions o;
+  o.english = true;
+  return o;
+}
+
 static KeyHandler::PlusOptions PlusShortcode() {
   KeyHandler::PlusOptions o;
   o.emojiShortcode = true;
@@ -708,6 +714,124 @@ TEST_F(KeyHandlerTest, PlusEmojiShortcodeDisabledByDefault) {
   keyHandler_->setEmojiShortcodePrefix(Plus::EmojiPrefix::Parse("`"));
   auto state = handleKeySequence(asciiKeys("`"));
   EXPECT_EQ(dynamic_cast<InputStates::PlusTool*>(state.get()), nullptr);
+}
+
+class PlusEnglishModeTest : public KeyHandlerTest {
+ protected:
+  void SetUp() override {
+    KeyHandlerTest::SetUp();
+    keyHandler_->setPlusOptions(PlusEnglishOn());
+    ASSERT_GT(keyHandler_->englishLexicon().load("mcbopomofo-plus-english.txt"), 0u);
+    state_ = std::make_unique<InputStates::Empty>();
+  }
+  void apply(std::unique_ptr<InputState> next) {
+    if (auto* seq = dynamic_cast<InputStates::StateSequence*>(next.get())) {
+      for (auto& s : seq->states) apply(std::move(s));
+      return;
+    }
+    if (auto* c = dynamic_cast<InputStates::Committing*>(next.get())) committed_ += c->text;
+    if (dynamic_cast<InputStates::EmptyIgnoringPrevious*>(next.get())) {
+      state_ = std::make_unique<InputStates::Empty>();
+    } else {
+      state_ = std::move(next);
+    }
+  }
+  void type(const std::string& keys) {
+    for (char c : keys) {
+      keyHandler_->handle(Key::asciiKey(c), state_.get(),
+          [this](auto next) { apply(std::move(next)); }, []() {});
+    }
+  }
+  bool toggle() {
+    return keyHandler_->toggleEnglishMode(state_.get(),
+        [this](auto next) { apply(std::move(next)); });
+  }
+  InputStates::PlusTool* tool() {
+    return dynamic_cast<InputStates::PlusTool*>(state_.get());
+  }
+  std::unique_ptr<InputState> state_;
+  std::string committed_;
+};
+
+TEST_F(PlusEnglishModeTest, ToggleTypeSpaceCommitsCorrectedCasing) {
+  ASSERT_TRUE(toggle());
+  ASSERT_NE(tool(), nullptr);
+  EXPECT_EQ(tool()->composingBuffer, "[EN] ");
+  type("github");  // These are Bopomofo keys; must not compose Zhuyin here.
+  ASSERT_NE(tool(), nullptr);
+  EXPECT_EQ(tool()->composingBuffer, "[EN] github");
+  ASSERT_FALSE(tool()->values.empty());
+  EXPECT_EQ(tool()->values[0], "GitHub");
+  type(" ");
+  EXPECT_EQ(committed_, "GitHub ");
+  // Back in Bopomofo automatically.
+  EXPECT_EQ(tool(), nullptr);
+  type("su3");
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->composingBuffer, "你");
+}
+
+TEST_F(PlusEnglishModeTest, KeepsChineseCompositionAroundEnglish) {
+  type("su3cl3");  // 你好
+  ASSERT_TRUE(toggle());
+  EXPECT_EQ(tool()->composingBuffer, "你好[EN] ");
+  type("linux");
+  EXPECT_EQ(tool()->composingBuffer, "你好[EN] linux");
+  type(" ");
+  EXPECT_EQ(committed_, "你好Linux ");  // Auto-spacing is applied at commit by the frontend.
+}
+
+TEST_F(PlusEnglishModeTest, EnterCommitsAsTypedAndEscapeDropsEnglishOnly) {
+  ASSERT_TRUE(toggle());
+  type("github\r");
+  EXPECT_EQ(committed_, "github");
+  committed_.clear();
+  type("su3");  // 你 composed (3 is a tone key)
+  ASSERT_TRUE(toggle());
+  type("abc\x1b");
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->composingBuffer, "你");
+  EXPECT_TRUE(committed_.empty());
+}
+
+TEST_F(PlusEnglishModeTest, ToggleAgainCommitsAndLeaves) {
+  ASSERT_TRUE(toggle());
+  type("iphone");
+  ASSERT_TRUE(toggle());
+  EXPECT_EQ(committed_, "iPhone");
+  EXPECT_EQ(tool(), nullptr);
+}
+
+TEST_F(PlusEnglishModeTest, BackspacePastPrefixLeavesMode) {
+  ASSERT_TRUE(toggle());
+  type("a\b\b");
+  EXPECT_EQ(tool(), nullptr);
+  EXPECT_TRUE(committed_.empty());
+}
+
+TEST_F(PlusEnglishModeTest, UppercaseAndPunctuationTypedAsIs) {
+  ASSERT_TRUE(toggle());
+  type("C++");
+  EXPECT_EQ(tool()->composingBuffer, "[EN] C++");
+  type("\r");
+  EXPECT_EQ(committed_, "C++");
+}
+
+TEST_F(PlusEnglishModeTest, RefusesWhileChoosingCandidates) {
+  type("su3 ");  // Space opens the candidate panel.
+  ASSERT_NE(dynamic_cast<InputStates::ChoosingCandidate*>(state_.get()), nullptr);
+  EXPECT_FALSE(toggle());
+}
+
+TEST_F(PlusEnglishModeTest, RefusesMidSyllableAndWhenDisabled) {
+  type("s");  // ㄋ, syllable in progress
+  EXPECT_FALSE(toggle());
+  keyHandler_->reset();
+  state_ = std::make_unique<InputStates::Empty>();
+  keyHandler_->setPlusOptions({});
+  EXPECT_FALSE(toggle());
 }
 
 }  // namespace McBopomofo

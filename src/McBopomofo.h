@@ -107,6 +107,9 @@ FCITX_CONFIGURATION(
     fcitx::Option<bool> plusEmojiShortcode{this, "PlusEmojiShortcode", _("Plus: Emoji shortcodes (prefix + name, e.g. ;;smile)"), false};
     // One punctuation key (";") or the same key twice (";;" = double-tap).
     fcitx::Option<std::string> plusEmojiShortcodePrefix{this, "PlusEmojiShortcodePrefix", _("Plus: Emoji shortcode prefix (one key, or the key twice for double-tap)"), ";;"};
+    fcitx::Option<bool> plusEnglish{this, "PlusEnglish", _("Plus: English buffer mode (shortcut toggles)"), false};
+    fcitx::KeyListOption plusEnglishToggleKeys{this, "PlusEnglishToggleKeys", _("Plus: English mode shortcut"),
+        {fcitx::Key("Control+Shift+space")}, fcitx::KeyListConstrain()};
     fcitx::Option<int, fcitx::IntConstrain> plusEmojiDoubleTapMs{this, "PlusEmojiDoubleTapMs", _("Plus: Double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};
 
     // Keyboard layout: standard, eten, etc.

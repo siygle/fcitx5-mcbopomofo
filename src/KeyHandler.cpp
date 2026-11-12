@@ -2008,6 +2008,21 @@ std::unique_ptr<InputStates::PlusTool> KeyHandler::buildPlusTool(
     }
     return std::make_unique<InputStates::PlusTool>(kind, input, display,
         std::move(values), std::move(labels), cursor);
+  } else if (kind == Kind::English) {
+    // English text goes at the cursor; the Chinese around it is kept.
+    auto composed = getComposedString(grid_.cursor());
+    display = composed.head + "[EN] " + input;
+    size_t cursor = display.size();
+    display += composed.tail;
+    std::vector<std::string> labels;
+    if (!input.empty()) {
+      for (const auto& w : englishLexicon_.candidates(input)) {
+        values.push_back(w);
+        labels.push_back(w);
+      }
+    }
+    return std::make_unique<InputStates::PlusTool>(kind, input, display,
+        std::move(values), std::move(labels), cursor);
   } else if (kind == Kind::Toolbar) {
     display = "[工具列] 常用語／目前剪貼簿／符號";
     values = quickPhrases_;
@@ -2023,6 +2038,37 @@ std::unique_ptr<InputStates::PlusTool> KeyHandler::buildPlusTool(
 bool KeyHandler::handlePlusTool(Key key, InputStates::PlusTool* state,
                                StateCallback callback, ErrorCallback error) {
   using Kind = InputStates::PlusTool::Kind;
+  if (state->kind == Kind::English) {
+    auto word = state->input;
+    if (key.ascii == Key::ESC) {  // Drop the English, keep the Chinese.
+      if (grid_.length()) callback(buildInputtingState());
+      else callback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+      return true;
+    }
+    if (key.ascii == Key::RETURN) {  // Exactly as typed.
+      commitEnglish(word, false, callback);
+      return true;
+    }
+    if (key.ascii == Key::SPACE && !key.shiftPressed) {  // Corrected casing.
+      commitEnglish(englishLexicon_.canonical(word), !word.empty(), callback);
+      return true;
+    }
+    if (key.ascii == Key::BACKSPACE) {
+      if (word.empty()) {  // Backspace past "[EN]" leaves the mode.
+        commitEnglish("", false, callback);
+        return true;
+      }
+      word.pop_back();
+    } else if (key.ascii > 0x20 && key.ascii < 0x7f && !key.ctrlPressed &&
+               !key.isFromNumberPad) {
+      if (word.size() >= 40) { error(); return true; }
+      word += key.ascii;  // Upper case arrives as ascii, not shiftPressed.
+    } else {
+      return false;  // Let the frontend handle selection/navigation keys.
+    }
+    callback(buildPlusTool(Kind::English, word));
+    return true;
+  }
   if (key.ascii == Key::ESC) {
     if (grid_.length() || !reading_.isEmpty()) callback(buildInputtingState());
     else callback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
@@ -2134,6 +2180,36 @@ bool KeyHandler::maybeHandleEmojiPrefix(Key key, InputState* state,
     emojiPrefixPendingWasReading_ = isBopomofoKey;
   }
   return false;
+}
+
+bool KeyHandler::toggleEnglishMode(InputState* state,
+                                   const StateCallback& callback) {
+  if (auto* tool = dynamic_cast<InputStates::PlusTool*>(state);
+      tool && tool->kind == InputStates::PlusTool::Kind::English) {
+    commitEnglish(englishLexicon_.canonical(tool->input), false, callback);
+    return true;
+  }
+  if (!plusOptions_.english || inputMode_ != InputMode::McBopomofo) return false;
+  // Never discard a half-typed syllable; other Plus panels stay modal.
+  if (!reading_.isEmpty() || dynamic_cast<InputStates::PlusTool*>(state)) return false;
+  if (state && !dynamic_cast<InputStates::Empty*>(state) &&
+      !dynamic_cast<InputStates::Inputting*>(state)) {
+    return false;
+  }
+  callback(buildPlusTool(InputStates::PlusTool::Kind::English));
+  return true;
+}
+
+void KeyHandler::commitEnglish(const std::string& word, bool trailingSpace,
+                               const StateCallback& callback) {
+  auto composed = getComposedString(grid_.cursor());
+  std::string text = composed.head + word + (trailingSpace ? " " : "") + composed.tail;
+  reset();
+  if (text.empty()) {
+    callback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+  } else {
+    callback(std::make_unique<InputStates::Committing>(text));
+  }
 }
 
 void KeyHandler::commitPlusTool(const std::string& value, StateCallback callback) {
