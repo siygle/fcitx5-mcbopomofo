@@ -145,6 +145,20 @@ int main() {
     list = ic.inputPanel().candidateList();
     if (list && list->size() > 1) list->candidate(1).select(&ic);  // pick 2nd
     check(!ic.committed.empty(), "mouse/selection of an English candidate commits");
+    // B: hint while typing English letters as Bopomofo, shortcut converts.
+    reset();
+    ic.type("su3github");
+    check(ic.inputPanel().auxDown().toString().find("GitHub") != std::string::npos,
+          "hint shows → GitHub without changing input");
+    check(ic.inputPanel().preedit().toString().find("GitHub") == std::string::npos,
+          "preedit still Bopomofo before shortcut");
+    ic.key(toggleEn);
+    ic.key(fcitx::Key(FcitxKey_space));
+    check(ic.committed == "你 GitHub ", "shortcut converts hinted keys, commits with spacing");
+    reset();
+    ic.type("vu0");
+    check(ic.inputPanel().auxDown().toString().empty(), "no hint for real Zhuyin ㄒㄧㄢ");
+    ic.key(fcitx::Key(FcitxKey_Escape));
     reset();
     ic.setCapabilityFlags(fcitx::CapabilityFlag::Password);
     ic.key(toggleEn);

@@ -187,7 +187,16 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     }
   }
   if (reading_.isValidKey(simpleAscii)) {
-    reading_.combineKey(simpleAscii);
+    {
+      auto count = [](const Formosa::Mandarin::BPMF& s) {
+        return !!s.consonantComponent() + !!s.middleVowelComponent() +
+               !!s.vowelComponent() + !!s.toneMarkerComponent();
+      };
+      int before = count(reading_.syllable());
+      reading_.combineKey(simpleAscii);
+      if (readingKeys_.size() < 40) readingKeys_ += simpleAscii;
+      if (count(reading_.syllable()) <= before) ++readingOverwrites_;
+    }
     keyConsumedByReading = true;
     // If asciiChar does not lead to a tone marker, we are done. Tone marker
     // would lead to composing of the reading, which is handled after this.
@@ -787,6 +796,8 @@ void KeyHandler::reset() {
 
 void KeyHandler::clearReading() {
   reading_.clear();
+  readingKeys_.clear();
+  readingOverwrites_ = 0;
   readingCompositionFailed_ = false;
 }
 
@@ -1146,6 +1157,21 @@ bool KeyHandler::handleDeleteKeys(Key key, McBopomofo::InputState* state,
   } else {
     if (key.ascii == Key::BACKSPACE) {
       reading_.backspace();
+      if (!readingKeys_.empty()) readingKeys_.pop_back();
+      // Recount on the remaining keys so a corrected typo clears the hint.
+      readingOverwrites_ = 0;
+      {
+        Formosa::Mandarin::BopomofoReadingBuffer replay(reading_.keyboardLayout());
+        auto count = [](const Formosa::Mandarin::BPMF& s) {
+          return !!s.consonantComponent() + !!s.middleVowelComponent() +
+                 !!s.vowelComponent() + !!s.toneMarkerComponent();
+        };
+        for (char c : readingKeys_) {
+          int before = count(replay.syllable());
+          replay.combineKey(c);
+          if (count(replay.syllable()) <= before) ++readingOverwrites_;
+        }
+      }
       readingCompositionFailed_ = false;
     } else {
       // Del not supported when bopomofo reading is active.
@@ -1613,8 +1639,12 @@ std::unique_ptr<InputStates::Inputting> KeyHandler::buildInputtingState() {
 
   std::string composingBuffer = head + reading + tail;
   size_t cursorIndex = head.length() + reading.length();
+  std::string tooltip = composedString.tooltip;
+  if (auto hint = englishHint(); !hint.empty()) {
+    tooltip = tooltip.empty() ? hint : tooltip + " / " + hint;
+  }
   return std::make_unique<InputStates::Inputting>(composingBuffer, cursorIndex,
-                                                  composedString.tooltip);
+                                                  tooltip);
 }
 
 std::unique_ptr<InputStates::ChoosingCandidate>
@@ -2190,14 +2220,51 @@ bool KeyHandler::toggleEnglishMode(InputState* state,
     return true;
   }
   if (!plusOptions_.english || inputMode_ != InputMode::McBopomofo) return false;
-  // Never discard a half-typed syllable; other Plus panels stay modal.
-  if (!reading_.isEmpty() || dynamic_cast<InputStates::PlusTool*>(state)) return false;
+  if (dynamic_cast<InputStates::PlusTool*>(state)) return false;  // Modal panels.
+  if (!reading_.isEmpty()) {
+    // An unfinished reading converts to English only if it was typed as
+    // plain letters (readingKeys_ is exactly what is on screen); otherwise
+    // keep the old rule: never discard a half-typed syllable.
+    if (readingKeys_.empty() ||
+        reading_.keyboardLayout()->syllableFromKeySequence(readingKeys_).composedString() !=
+            reading_.composedString()) {
+      return false;
+    }
+    std::string keys = readingKeys_;
+    clearReading();
+    callback(buildPlusTool(InputStates::PlusTool::Kind::English, keys));
+    return true;
+  }
   if (state && !dynamic_cast<InputStates::Empty*>(state) &&
       !dynamic_cast<InputStates::Inputting*>(state)) {
     return false;
   }
   callback(buildPlusTool(InputStates::PlusTool::Kind::English));
   return true;
+}
+
+std::string KeyHandler::englishHintWord() const {
+  if (!plusOptions_.english || !plusOptions_.englishHint ||
+      inputMode_ != InputMode::McBopomofo || reading_.isEmpty()) {
+    return {};
+  }
+  // Thresholds measured on the 10k most common English words (Standard
+  // layout: ~98% of >=4-letter words). Real Zhuyin typed in order adds one
+  // component per key, so it essentially never reaches two overwrites.
+  if (readingKeys_.size() < 4 || readingOverwrites_ < 2) return {};
+  bool letters = std::all_of(readingKeys_.begin(), readingKeys_.end(), [](char c) {
+    return c >= 'a' && c <= 'z';
+  });
+  if (!letters) return {};
+  // Only hint for real words; unknown letter soup is more likely a typo.
+  if (!englishLexicon_.contains(readingKeys_)) return {};
+  return englishLexicon_.canonical(readingKeys_);
+}
+
+std::string KeyHandler::englishHint() const {
+  auto word = englishHintWord();
+  if (word.empty()) return {};
+  return englishShortcutLabel_ + " → " + word;
 }
 
 void KeyHandler::commitEnglish(const std::string& word, bool trailingSpace,

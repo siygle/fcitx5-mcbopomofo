@@ -75,6 +75,10 @@ size_t EnglishLexicon::load(const std::string& path, bool userFile) {
   return n;
 }
 
+bool EnglishLexicon::contains(const std::string& word) const {
+  return !word.empty() && byLower_.count(Lower(word)) > 0;
+}
+
 std::string EnglishLexicon::canonical(const std::string& typed) const {
   if (typed.empty()) return typed;
   auto it = byLower_.find(Lower(typed));

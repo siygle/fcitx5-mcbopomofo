@@ -108,6 +108,7 @@ FCITX_CONFIGURATION(
     // One punctuation key (";") or the same key twice (";;" = double-tap).
     fcitx::Option<std::string> plusEmojiShortcodePrefix{this, "PlusEmojiShortcodePrefix", _("Plus: Emoji shortcode prefix (one key, or the key twice for double-tap)"), ";;"};
     fcitx::Option<bool> plusEnglish{this, "PlusEnglish", _("Plus: English buffer mode (shortcut toggles)"), false};
+    fcitx::Option<bool> plusEnglishHint{this, "PlusEnglishHint", _("Plus: Hint when typed keys look like an English word"), false};
     fcitx::KeyListOption plusEnglishToggleKeys{this, "PlusEnglishToggleKeys", _("Plus: English mode shortcut"),
         {fcitx::Key("Control+Shift+space")}, fcitx::KeyListConstrain()};
     fcitx::Option<int, fcitx::IntConstrain> plusEmojiDoubleTapMs{this, "PlusEmojiDoubleTapMs", _("Plus: Double-tap window (ms)"), 300, fcitx::IntConstrain(100, 1000)};

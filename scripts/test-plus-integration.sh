@@ -25,6 +25,7 @@ PlusToolbar=True
 PlusEmojiShortcode=True
 PlusEmojiShortcodePrefix=;;
 PlusEnglish=True
+PlusEnglishHint=True
 PlusSpaceLetters=True
 PlusSpaceDigits=True
 INI

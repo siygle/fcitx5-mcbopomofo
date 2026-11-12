@@ -17,6 +17,8 @@ class EnglishLexicon {
   size_t load(const std::string& path, bool userFile = false);
   void clear();
   size_t size() const { return words_.size(); }
+  // Case-insensitive membership.
+  bool contains(const std::string& word) const;
 
   // Candidates for what the user typed, in order:
   //  1. user-defined casing of the exact word,

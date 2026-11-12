@@ -593,6 +593,7 @@ KeyHandler::PlusOptions McBopomofoEngine::plusOptionsFromConfig() const {
   o.toolbar = config_.plusToolbar.value();
   o.emojiShortcode = config_.plusEmojiShortcode.value();
   o.english = config_.plusEnglish.value();
+  o.englishHint = config_.plusEnglishHint.value();
   return o;
 }
 
@@ -680,6 +681,10 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
         fcitx5_compat::locate("data/mcbopomofo-plus-emoji-shortcodes.txt"));
     keyHandler_->emojiShortcodes().load(
         languageModelLoader_->userDataPath() + "/plus-emoji-shortcodes.txt", true);
+  }
+  if (!config_.plusEnglishToggleKeys.value().empty()) {
+    keyHandler_->setEnglishShortcutLabel(
+        config_.plusEnglishToggleKeys.value().front().toString(fcitx::KeyStringFormat::Localized));
   }
   keyHandler_->englishLexicon().clear();
   if (config_.plusEnglish.value()) {

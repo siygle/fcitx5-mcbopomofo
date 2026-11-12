@@ -825,13 +825,73 @@ TEST_F(PlusEnglishModeTest, RefusesWhileChoosingCandidates) {
   EXPECT_FALSE(toggle());
 }
 
-TEST_F(PlusEnglishModeTest, RefusesMidSyllableAndWhenDisabled) {
-  type("s");  // ㄋ, syllable in progress
-  EXPECT_FALSE(toggle());
-  keyHandler_->reset();
-  state_ = std::make_unique<InputStates::Empty>();
+TEST_F(PlusEnglishModeTest, RefusesWhenDisabled) {
   keyHandler_->setPlusOptions({});
   EXPECT_FALSE(toggle());
+}
+
+TEST_F(PlusEnglishModeTest, HintAppearsForEnglishAndShortcutConverts) {
+  KeyHandler::PlusOptions o = PlusEnglishOn();
+  o.englishHint = true;
+  keyHandler_->setPlusOptions(o);
+  type("su3");  // 你
+  type("github");
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->tooltip, "Ctrl+Shift+Space → GitHub");
+  // Nothing changed: still Bopomofo on screen until the shortcut is pressed.
+  EXPECT_EQ(inputting->composingBuffer.find("GitHub"), std::string::npos);
+  ASSERT_TRUE(toggle());
+  ASSERT_NE(tool(), nullptr);
+  EXPECT_EQ(tool()->composingBuffer, "你[EN] github");
+  type(" ");
+  EXPECT_EQ(committed_, "你GitHub ");
+}
+
+TEST_F(PlusEnglishModeTest, NoHintForRealZhuyinOrWhenDisabled) {
+  KeyHandler::PlusOptions o = PlusEnglishOn();
+  o.englishHint = true;
+  keyHandler_->setPlusOptions(o);
+  type("vu0");  // ㄒㄧㄢ in progress (no tone yet)
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_TRUE(inputting->tooltip.empty());
+  keyHandler_->reset();
+  state_ = std::make_unique<InputStates::Empty>();
+  type("qqqqq");  // Overwrites but not a word.
+  inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_TRUE(inputting->tooltip.empty());
+  keyHandler_->reset();
+  state_ = std::make_unique<InputStates::Empty>();
+  keyHandler_->setPlusOptions(PlusEnglishOn());  // Hint off.
+  type("github");
+  inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_TRUE(inputting->tooltip.empty());
+}
+
+TEST_F(PlusEnglishModeTest, BackspaceUpdatesHint) {
+  KeyHandler::PlusOptions o = PlusEnglishOn();
+  o.englishHint = true;
+  keyHandler_->setPlusOptions(o);
+  type("githubx");  // not a word -> no hint
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_TRUE(inputting->tooltip.empty());
+  type("\b");
+  inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(inputting->tooltip, "Ctrl+Shift+Space → GitHub");
+}
+
+TEST_F(PlusEnglishModeTest, ShortcutConvertsUnfinishedReadingEvenWithoutHint) {
+  type("lin");  // 3 keys, below the hint threshold
+  ASSERT_TRUE(toggle());
+  ASSERT_NE(tool(), nullptr);
+  EXPECT_EQ(tool()->composingBuffer, "[EN] lin");
+  type("ux ");
+  EXPECT_EQ(committed_, "Linux ");
 }
 
 }  // namespace McBopomofo

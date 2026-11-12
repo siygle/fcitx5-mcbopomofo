@@ -135,6 +135,7 @@ class KeyHandler {
     bool toolbar = false;
     bool emojiShortcode = false;
     bool english = false;
+    bool englishHint = false;
   };
   void setPlusOptions(PlusOptions options) { plusOptions_ = options; }
   // Emoji shortcode input. An invalid prefix disables the feature.
@@ -149,6 +150,12 @@ class KeyHandler {
   // calls this; it enters the mode, or leaves it committing what was typed.
   // Returns false when the mode is disabled or a syllable is in progress.
   bool toggleEnglishMode(InputState* state, const StateCallback& callback);
+  // Text shown next to the composition when the keys of the current,
+  // unfinished reading look like an English word. Empty when there is none.
+  // The hint never changes input; the toggle shortcut converts it.
+  std::string englishHint() const;
+  // Label of the toggle shortcut, set by the frontend for the hint text.
+  void setEnglishShortcutLabel(std::string label) { englishShortcutLabel_ = std::move(label); }
   // Monotonic key time in ms; set by the frontend before each handle() call.
   // Tests drive it directly. Only used for prefix double-tap detection.
   void setKeyTimeMs(int64_t ms) { keyTimeMs_ = ms; }
@@ -281,6 +288,13 @@ class KeyHandler {
   Plus::EmojiPrefix emojiPrefix_;
   Plus::EmojiShortcodes emojiShortcodes_;
   Plus::EnglishLexicon englishLexicon_;
+  // Raw keys typed into the current reading and how many of them did not add
+  // a new Bopomofo component (overwrote one or were ignored). Real Zhuyin is
+  // typed one component per key; English letters keep overwriting.
+  std::string readingKeys_;
+  int readingOverwrites_ = 0;
+  std::string englishShortcutLabel_ = "Ctrl+Shift+Space";
+  std::string englishHintWord() const;
   void commitEnglish(const std::string& word, bool trailingSpace,
                      const StateCallback& callback);
   int emojiDoubleTapMs_ = 300;
