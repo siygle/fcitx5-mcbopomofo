@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+# One switcher for the input methods built in ~/Work.
+#
+#   ime-switch status       what is installed / active
+#   ime-switch mcb-plus     小麥注音 Plus      (fcitx5-mcbopomofo-plus)
+#   ime-switch mcb          原本的小麥注音      (fcitx5-mcbopomofo-git)
+#   ime-switch chewing      新酷音 Plus        (libchewing 0.14 + fcitx5-chewing plus)
+#   ime-switch original     everything back to the original packages
+#                           (小麥 git + libchewing 0.13.1 + fcitx5-chewing 5.1.13)
+#
+# A mode is never implied: there is no "toggle", so a missing argument only
+# prints the status. Each mode installs what it needs in ONE pacman
+# transaction, makes that input method the active one in fcitx5, and restarts
+# fcitx5 through its systemd user unit.
+set -euo pipefail
+
+# --- locations --------------------------------------------------------------
+mcb_repo=${MCB_REPO:-$HOME/Work/fcitx5-mcbopomofo-plus}
+mcb_plus_dir=$mcb_repo/packaging/plus
+mcb_orig_dir=$mcb_repo/packaging/backup
+mcb_orig_spare=$HOME/.local/share/fcitx5-mcbopomofo-rollback
+chew_dir=${CHEWING_PACKAGING:-$HOME/Work/fcitx5-chewing/packaging}
+chew_orig_dir=${CHEWING_ROLLBACK_DIR:-$HOME/.local/share/chewing-rollback}
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+profile=$config_home/fcitx5/profile
+mcb_conf=$config_home/fcitx5/conf/mcbopomofo.conf
+chew_conf=$config_home/fcitx5/conf/chewing.conf
+mcb_stash=$mcb_orig_dir/plus-settings.conf
+state_dir=$data_home/ime-switch
+pacman_cmd=${SWITCH_PACMAN:-sudo pacman}
+unit=omarchy-fcitx5.service
+
+# --- helpers ----------------------------------------------------------------
+newest() { ls -t "$@" 2>/dev/null | head -1; }
+have() { pacman -Qq "$1" >/dev/null 2>&1; }
+pkg_ver() { pacman -Q "$1" 2>/dev/null | cut -d' ' -f2; }
+file_ver() { pacman -Qp "$1" 2>/dev/null | cut -d' ' -f2; }
+die() { echo "ime-switch: $*" >&2; exit 1; }
+
+mcb_plus_pkg() { newest "$mcb_plus_dir"/fcitx5-mcbopomofo-plus-*.pkg.tar.zst; }
+mcb_orig_pkg() {
+  newest "$mcb_orig_dir"/fcitx5-mcbopomofo-git-*.pkg.tar.zst \
+         "$mcb_orig_spare"/fcitx5-mcbopomofo-git-*.pkg.tar.zst
+}
+chew_plus_pkgs() {
+  local a b
+  a=$(newest "$chew_dir"/libchewing/libchewing-plus-*.pkg.tar.zst)
+  b=$(newest "$chew_dir"/fcitx5-chewing/fcitx5-chewing-plus-*.pkg.tar.zst)
+  [[ -n $a && -n $b ]] && echo "$a $b"
+}
+chew_orig_pkgs() {
+  local a b
+  a=$(newest "$chew_orig_dir"/libchewing-0*.pkg.tar.zst)
+  b=$(newest "$chew_orig_dir"/fcitx5-chewing-5*.pkg.tar.zst)
+  [[ -n $a && -n $b ]] && echo "$a $b"
+}
+
+# Package already installed at exactly this file's version?
+up_to_date() { local f=$1 name; name=$(pacman -Qp "$f" | cut -d' ' -f1); [[ $(pkg_ver "$name") == "$(file_ver "$f")" ]]; }
+
+snapshot() {
+  local dest=$state_dir/snapshots/$(date +%Y%m%d-%H%M%S)
+  mkdir -p "$dest"
+  [[ -f $profile ]] && cp -a "$profile" "$dest/"
+  [[ -f $mcb_conf ]] && cp -a "$mcb_conf" "$dest/"
+  [[ -f $chew_conf ]] && cp -a "$chew_conf" "$dest/"
+  [[ -d $data_home/chewing ]] && cp -a "$data_home/chewing" "$dest/chewing-userdata"
+  [[ -d $data_home/fcitx5/mcbopomofo ]] && cp -a "$data_home/fcitx5/mcbopomofo" "$dest/mcbopomofo-userdata"
+  echo "Snapshot: $dest"
+}
+
+# Top-level Plus keys must stay before the first [Section] in fcitx ini files.
+insert_top_level() {  # file, lines...
+  local f=$1; shift
+  local add; add=$(printf '%s\n' "$@")
+  [[ -n $add ]] || return 0
+  mkdir -p "$(dirname "$f")"; touch "$f"
+  awk -v add="$add" '!done && /^\[/ { print add; done = 1 } { print } END { if (!done) print add }' \
+    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+mcb_stash_plus() {  # original 小麥 ignores Plus keys; keep its file clean
+  [[ -f $mcb_conf ]] && grep -q '^Plus[A-Za-z]*=' "$mcb_conf" || return 0
+  mkdir -p "$(dirname "$mcb_stash")"
+  grep '^Plus[A-Za-z]*=' "$mcb_conf" | grep -v '^Plus[A-Za-z]*Keys=' > "$mcb_stash"
+  sed -i '/^Plus[A-Za-z]*=/d' "$mcb_conf"
+  echo "小麥 Plus settings saved"
+}
+mcb_restore_plus() {
+  [[ -s $mcb_stash ]] || return 0
+  local missing=() line
+  while IFS= read -r line; do
+    [[ $line == Plus*Keys=* ]] && continue  # list options use [Sections]
+    [[ -f $mcb_conf ]] && grep -q "^${line%%=*}=" "$mcb_conf" || missing+=("$line")
+  done < "$mcb_stash"
+  insert_top_level "$mcb_conf" "${missing[@]}"
+  echo "小麥 Plus settings restored"
+}
+chew_seed_plus() {  # first time only: same features as 小麥 Plus
+  [[ -f $chew_conf ]] && grep -q '^Plus' "$chew_conf" && return 0
+  insert_top_level "$chew_conf" PlusEmoji=True PlusCalculator=True \
+    PlusSpaceLetters=True PlusSpaceDigits=True PlusEmojiShortcode=True \
+    PlusEnglish=True PlusEnglishHint=True
+  echo "新酷音 Plus features enabled in $chew_conf (first switch only)"
+}
+
+# Make <im> part of the default group and the active input method.
+profile_select() {
+  local im=$1
+  python3 -I - "$profile" "$im" <<'PY'
+import os, re, sys
+path, im = sys.argv[1], sys.argv[2]
+lines = open(path, encoding="utf-8").read().splitlines() if os.path.exists(path) else [
+    "[Groups/0]", "Name=Default", "Default Layout=us", "DefaultIM=" + im, "",
+    "[Groups/0/Items/0]", "Name=keyboard-us", "Layout=", "",
+    "[GroupOrder]", "0=Default"]
+items, section = {}, None
+for i, l in enumerate(lines):
+    m = re.match(r"^\[(.*)\]$", l)
+    if m:
+        section = m.group(1); continue
+    m = re.match(r"^Groups/0/Items/(\d+)$", section or "")
+    if m and l.startswith("Name="):
+        items[int(m.group(1))] = l[5:]
+out, section, set_default = [], None, False
+for l in lines:
+    m = re.match(r"^\[(.*)\]$", l)
+    if m:
+        if section == "Groups/0" and not set_default:
+            out.append("DefaultIM=" + im); set_default = True
+        section = m.group(1)
+    if section == "Groups/0" and l.startswith("DefaultIM="):
+        l = "DefaultIM=" + im; set_default = True
+    out.append(l)
+if im not in items.values():
+    n = max(items) + 1 if items else 0
+    at = next((k for k, l in enumerate(out) if l == "[GroupOrder]"), len(out))
+    out[at:at] = ["[Groups/0/Items/%d]" % n, "Name=" + im, "Layout=", ""]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+open(path + ".tmp", "w", encoding="utf-8").write("\n".join(out) + "\n")
+os.replace(path + ".tmp", path)
+PY
+}
+
+# fcitx5 rewrites its profile on exit, so stop it before editing and start
+# it afterwards. Uses the systemd unit when present; also stops any fcitx5
+# started outside it (e.g. an old `fcitx5 -r -d`), which otherwise keeps the
+# unit in a restart loop.
+fcitx_stop() {
+  [[ -n ${SWITCH_NO_RESTART:-} ]] && return 0
+  systemctl --user stop "$unit" 2>/dev/null || true
+  pkill -x fcitx5 2>/dev/null || true
+  for _ in $(seq 20); do pgrep -x fcitx5 >/dev/null || break; sleep 0.1; done
+}
+fcitx_start() {
+  local im=$1
+  [[ -n ${SWITCH_NO_RESTART:-} ]] && return 0
+  if systemctl --user cat "$unit" >/dev/null 2>&1; then
+    systemctl --user start "$unit"
+  else
+    setsid fcitx5 -d >/dev/null 2>&1 < /dev/null &
+  fi
+  for _ in $(seq 50); do fcitx5-remote --check 2>/dev/null && break; sleep 0.1; done
+  fcitx5-remote -s "$im" 2>/dev/null || true
+}
+
+install_files() {  # only what is not already installed at that version
+  local todo=() f
+  for f in "$@"; do up_to_date "$f" || todo+=("$f"); done
+  ((${#todo[@]})) || { echo "Packages already up to date."; return 0; }
+  echo "Installing: ${todo[*]##*/}"
+  echo "If pacman asks to remove a conflicting package, answer y."
+  $pacman_cmd -U "${todo[@]}"
+}
+
+status() {
+  echo "小麥注音:  $(have fcitx5-mcbopomofo-plus && echo "Plus $(pkg_ver fcitx5-mcbopomofo-plus)" \
+                 || { have fcitx5-mcbopomofo-git && echo "original $(pkg_ver fcitx5-mcbopomofo-git)"; } \
+                 || echo 'not installed')"
+  echo "新酷音:    $(have libchewing-plus && echo "Plus (libchewing $(pkg_ver libchewing-plus))" \
+                 || { have libchewing && echo "original (libchewing $(pkg_ver libchewing))"; } \
+                 || echo 'not installed')"
+  local active; active=$(fcitx5-remote -n 2>/dev/null || echo '?')
+  echo "Active IM: $active"
+  local p; p=$(mcb_plus_pkg); echo "Newest 小麥 Plus build:  ${p:+$(file_ver "$p")}"
+  p=$(chew_plus_pkgs | cut -d' ' -f1); echo "Newest 新酷音 Plus build: ${p:+$(file_ver "$p")}"
+  if pgrep -x fcitx5 >/dev/null && systemctl --user is-active -q "$unit" 2>/dev/null; then :; \
+  elif pgrep -x fcitx5 >/dev/null; then echo "Note: fcitx5 runs outside $unit (the next switch fixes this)"; fi
+}
+
+# --- main -------------------------------------------------------------------
+mode=${1:-status}
+case $mode in
+  status|-h|--help|help)
+    [[ $mode == status ]] || sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    status ;;
+  mcb-plus)
+    p=$(mcb_plus_pkg); [[ -n $p ]] || die "no 小麥 Plus package in $mcb_plus_dir"
+    [[ -n $(mcb_orig_pkg) ]] || die "refusing: original 小麥 backup package missing"
+    snapshot; install_files "$p"
+    fcitx_stop; mcb_restore_plus; profile_select mcbopomofo; fcitx_start mcbopomofo
+    echo "Now: 小麥注音 Plus" ;;
+  mcb)
+    p=$(mcb_orig_pkg); [[ -n $p ]] || die "original 小麥 package missing"
+    snapshot; install_files "$p"
+    fcitx_stop; mcb_stash_plus; profile_select mcbopomofo; fcitx_start mcbopomofo
+    echo "Now: 原本的小麥注音" ;;
+  chewing)
+    read -r a b <<<"$(chew_plus_pkgs || true)"; [[ -n ${b:-} ]] || die "新酷音 Plus packages not built in $chew_dir"
+    [[ -n $(chew_orig_pkgs || true) ]] || die "refusing: original 新酷音 packages missing in $chew_orig_dir"
+    snapshot; install_files "$a" "$b"
+    fcitx_stop; chew_seed_plus; profile_select chewing; fcitx_start chewing
+    echo "Now: 新酷音 Plus" ;;
+  original)
+    m=$(mcb_orig_pkg); read -r a b <<<"$(chew_orig_pkgs || true)"
+    [[ -n $m && -n ${b:-} ]] || die "original packages missing"
+    snapshot; install_files "$m" "$a" "$b"
+    fcitx_stop; mcb_stash_plus; profile_select mcbopomofo; fcitx_start mcbopomofo
+    echo "Now: original packages (小麥注音 active)" ;;
+  *) die "unknown mode '$mode' (status | mcb-plus | mcb | chewing | original)" ;;
+esac
