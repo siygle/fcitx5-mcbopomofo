@@ -62,9 +62,18 @@ restore_plus_settings() {
   mkdir -p "$conf_dir"
   touch "$conf"
   # Settings changed while on Plus win; only add the ones that are missing.
-  while IFS= read -r line; do
-    grep -q "^${line%%=*}=" "$conf" || printf '%s\n' "$line" >> "$conf"
-  done < "$plus_stash"
+  # They must go BEFORE the first [Section] (e.g. [PlusEnglishDoubleTapKeys]):
+  # appended after it, fcitx would read them as keys of that section.
+  local missing
+  missing=$(while IFS= read -r line; do
+    grep -q "^${line%%=*}=" "$conf" || printf '%s\n' "$line"
+  done < "$plus_stash")
+  if [[ -n $missing ]]; then
+    awk -v add="$missing" '
+      !done && /^\[/ { print add; done = 1 }
+      { print }
+      END { if (!done) print add }' "$conf" > "$conf.tmp" && mv "$conf.tmp" "$conf"
+  fi
   echo "Plus settings restored"
 }
 
