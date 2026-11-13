@@ -23,17 +23,17 @@ sudo cmake --install build && fcitx5 -r -d
 ```
 
 ## 切換／還原（Rollback）
-原本安裝的 `fcitx5-mcbopomofo-git` 已原樣備份成 pacman 套件（`packaging/backup/`，25 個檔案逐位元驗證相同）。
-兩個套件互相衝突，pacman 會原子性地互換，資料庫保持正確。
+
+用 `ime-switch`（`packaging/ime-switch/`，裝在 `~/.local/bin/ime-switch`）：
 
 ```bash
-mcb-switch            # 一鍵切換：Plus ⇄ 原版（~/.local/bin/mcb-switch → packaging/switch.sh）
-mcb-switch status     # 目前安裝哪個
-mcb-switch plus       # 換成 Plus，或升級到最新打包的 Plus
-mcb-switch original   # 還原成原本的小麥注音
+ime-switch            # 狀態
+ime-switch mcb-plus   # 小麥注音 Plus
+ime-switch mcb        # 原本的小麥注音
+ime-switch chewing    # 新酷音 Plus（github.com/siygle/fcitx5-chewing plus 分支）
+ime-switch original   # 全部換回原版
 ```
-切到原版時，Plus 的設定會先存到 `packaging/backup/plus-settings.conf` 並從設定檔移除；切回 Plus 時自動補回，來回切換不會遺失設定。
-使用者詞庫（`~/.local/share/fcitx5/mcbopomofo/`）兩者共用，切換時不會被更動。
+詳見 `packaging/ime-switch/README.md`。舊的 `packaging/switch.sh` 不再使用。
 
 ## Emoji 短碼
 
