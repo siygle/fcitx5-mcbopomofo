@@ -6,7 +6,7 @@ One CLI to switch between the input methods built in `~/Work`.
 ime-switch            # status (never switches)
 ime-switch mcb-plus   # 小麥注音 Plus
 ime-switch mcb        # 原本的小麥注音
-ime-switch chewing    # 新酷音 Plus (libchewing 0.14)
+ime-switch chewing    # 新酷音 Plus (libchewing 0.14) + 語音輸入 (fcitx5-voxkit, hold Right Alt)
 ime-switch original   # all original packages (小麥 git + 新酷音 0.13.1)
 ```
 
@@ -24,3 +24,7 @@ Packages it uses:
 | 新酷音 | `~/Work/fcitx5-chewing/packaging/{libchewing,fcitx5-chewing}/` | `~/.local/share/chewing-rollback/` (signed Arch packages) |
 
 `mcb-switch` and `chewing-switch` are replaced by stubs that only print the status.
+
+Dictation (`fcitx5-voxkit`, built in `~/Work/fcitx5-voxkit/packaging`) is installed with
+`chewing` and its user service `voxkit.service` is started; other modes stop the
+service, and `original` removes the package.

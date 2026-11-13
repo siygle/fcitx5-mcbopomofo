@@ -4,7 +4,8 @@
 #   ime-switch status       what is installed / active
 #   ime-switch mcb-plus     小麥注音 Plus      (fcitx5-mcbopomofo-plus)
 #   ime-switch mcb          原本的小麥注音      (fcitx5-mcbopomofo-git)
-#   ime-switch chewing      新酷音 Plus        (libchewing 0.14 + fcitx5-chewing plus)
+#   ime-switch chewing      新酷音 Plus        (libchewing 0.14 + fcitx5-chewing plus
+#                           + fcitx5-voxkit dictation, when built)
 #   ime-switch original     everything back to the original packages
 #                           (小麥 git + libchewing 0.13.1 + fcitx5-chewing 5.1.13)
 #
@@ -21,6 +22,8 @@ mcb_orig_dir=$mcb_repo/packaging/backup
 mcb_orig_spare=$HOME/.local/share/fcitx5-mcbopomofo-rollback
 chew_dir=${CHEWING_PACKAGING:-$HOME/Work/fcitx5-chewing/packaging}
 chew_orig_dir=${CHEWING_ROLLBACK_DIR:-$HOME/.local/share/chewing-rollback}
+voxkit_dir=${VOXKIT_PACKAGING:-$HOME/Work/fcitx5-voxkit/packaging}
+voxkit_unit=voxkit.service
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 data_home=${XDG_DATA_HOME:-$HOME/.local/share}
 profile=$config_home/fcitx5/profile
@@ -34,7 +37,7 @@ unit=omarchy-fcitx5.service
 # --- helpers ----------------------------------------------------------------
 newest() { ls -t "$@" 2>/dev/null | head -1; }
 have() { pacman -Qq "$1" >/dev/null 2>&1; }
-pkg_ver() { pacman -Q "$1" 2>/dev/null | cut -d' ' -f2; }
+pkg_ver() { pacman -Q "$1" 2>/dev/null | head -1 | cut -d' ' -f2; }
 file_ver() { pacman -Qp "$1" 2>/dev/null | cut -d' ' -f2; }
 die() { echo "ime-switch: $*" >&2; exit 1; }
 
@@ -48,6 +51,19 @@ chew_plus_pkgs() {
   a=$(newest "$chew_dir"/libchewing/libchewing-plus-*.pkg.tar.zst)
   b=$(newest "$chew_dir"/fcitx5-chewing/fcitx5-chewing-plus-*.pkg.tar.zst)
   [[ -n $a && -n $b ]] && echo "$a $b"
+}
+voxkit_pkg() { newest "$voxkit_dir"/fcitx5-voxkit-*.pkg.tar.zst; }
+# Dictation daemon: on with 新酷音 Plus, off otherwise (frees the microphone
+# and ~1 GB RAM). The module itself is harmless without the daemon.
+voxkit_service() {  # start|stop
+  [[ -n ${SWITCH_NO_RESTART:-} ]] && return 0
+  systemctl --user cat "$voxkit_unit" >/dev/null 2>&1 || return 0
+  if [[ $1 == start ]]; then
+    systemctl --user enable --now "$voxkit_unit" >/dev/null 2>&1 &&
+      echo "Dictation: hold Right Alt to speak (voxkit.service running)"
+  else
+    systemctl --user disable --now "$voxkit_unit" >/dev/null 2>&1 || true
+  fi
 }
 chew_orig_pkgs() {
   local a b
@@ -183,6 +199,7 @@ status() {
                  || echo 'not installed')"
   local active; active=$(fcitx5-remote -n 2>/dev/null || echo '?')
   echo "Active IM: $active"
+  echo "語音輸入:  $(have fcitx5-voxkit && echo "fcitx5-voxkit $(pkg_ver fcitx5-voxkit), service $(systemctl --user is-active "$voxkit_unit" 2>/dev/null || echo inactive)" || echo 'not installed')"
   local p; p=$(mcb_plus_pkg); echo "Newest 小麥 Plus build:  ${p:+$(file_ver "$p")}"
   p=$(chew_plus_pkgs | cut -d' ' -f1); echo "Newest 新酷音 Plus build: ${p:+$(file_ver "$p")}"
   if pgrep -x fcitx5 >/dev/null && systemctl --user is-active -q "$unit" 2>/dev/null; then :; \
@@ -200,22 +217,31 @@ case $mode in
     [[ -n $(mcb_orig_pkg) ]] || die "refusing: original 小麥 backup package missing"
     snapshot; install_files "$p"
     fcitx_stop; mcb_restore_plus; profile_select mcbopomofo; fcitx_start mcbopomofo
+    voxkit_service stop
     echo "Now: 小麥注音 Plus" ;;
   mcb)
     p=$(mcb_orig_pkg); [[ -n $p ]] || die "original 小麥 package missing"
     snapshot; install_files "$p"
     fcitx_stop; mcb_stash_plus; profile_select mcbopomofo; fcitx_start mcbopomofo
+    voxkit_service stop
     echo "Now: 原本的小麥注音" ;;
   chewing)
     read -r a b <<<"$(chew_plus_pkgs || true)"; [[ -n ${b:-} ]] || die "新酷音 Plus packages not built in $chew_dir"
     [[ -n $(chew_orig_pkgs || true) ]] || die "refusing: original 新酷音 packages missing in $chew_orig_dir"
-    snapshot; install_files "$a" "$b"
+    v=$(voxkit_pkg)  # optional
+    snapshot; install_files "$a" "$b" ${v:+"$v"}
     fcitx_stop; chew_seed_plus; profile_select chewing; fcitx_start chewing
+    voxkit_service start
     echo "Now: 新酷音 Plus" ;;
   original)
     m=$(mcb_orig_pkg); read -r a b <<<"$(chew_orig_pkgs || true)"
     [[ -n $m && -n ${b:-} ]] || die "original packages missing"
     snapshot; install_files "$m" "$a" "$b"
+    voxkit_service stop
+    if have fcitx5-voxkit; then
+      echo "Removing fcitx5-voxkit (not part of the original setup)"
+      $pacman_cmd -R fcitx5-voxkit
+    fi
     fcitx_stop; mcb_stash_plus; profile_select mcbopomofo; fcitx_start mcbopomofo
     echo "Now: original packages (小麥注音 active)" ;;
   *) die "unknown mode '$mode' (status | mcb-plus | mcb | chewing | original)" ;;
