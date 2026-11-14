@@ -1,0 +1,22 @@
+# User unit for the voxkit proof of concept.
+# Install:
+#   cp voice/systemd/voxkit.service ~/.config/systemd/user/voxkit.service
+#   # edit ExecStart if voxkit is not on the user cargo bin path
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now voxkit.service
+#
+# The process binds $XDG_RUNTIME_DIR/voxkit.sock itself (mode 0600).
+# This is not systemd socket activation; see voice/README.md.
+
+[Unit]
+Description=voxkit local voice daemon (fcitx5-mcbopomofo voice PoC)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/voxkit serve
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target
